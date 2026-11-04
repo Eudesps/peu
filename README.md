@@ -158,7 +158,170 @@ Estas perguntas devem orientar entrevistas curtas e testes de protótipo. As res
 - Quais dados pessoais são realmente necessários para criar uma conta?
 - O que a pessoa espera que aconteça com seus dados quando encerra a conta?
 
-## 10. Stack e arquitetura previstas
+## 10. Principais casos de uso
+
+Os fluxos abaixo detalham como os perfis propostos usam o MVP. Quando uma regra ainda não foi definida, ela aparece como **proposta a validar** e não deve ser tratada como decisão fechada.
+
+### Atores
+
+- **Estudante:** pessoa com conta que usa a plataforma.
+- **Responsável principal:** estudante que criou a tarefa e administra seus dados, participantes e subtarefas.
+- **Participante:** estudante que aceitou ou recebeu acesso a uma tarefa compartilhada.
+- **Estudante convidado:** pessoa que recebeu um convite para participar de uma tarefa.
+
+Responsável principal, participante e estudante convidado são papéis que um mesmo estudante pode exercer em tarefas diferentes.
+
+### UC-01 — Cadastrar conta
+
+**Ator principal:** estudante não cadastrado.
+
+**Pré-condição:** a pessoa ainda não possui uma conta com o identificador informado.
+
+**Fluxo principal:**
+
+1. A pessoa abre a tela de cadastro.
+2. Informa os dados exigidos pelo formulário.
+3. O sistema valida os dados e verifica se o identificador já está em uso.
+4. O sistema cria a conta e informa que o cadastro foi concluído.
+
+**Exceções:** dados obrigatórios ausentes ou inválidos; identificador já cadastrado; falha ao salvar a conta.
+
+**A validar:** quais dados são necessários, se o cadastro usa e-mail e senha e se é necessária confirmação de e-mail.
+
+### UC-02 — Autenticar-se
+
+**Ator principal:** estudante cadastrado.
+
+**Pré-condição:** a conta existe e está habilitada.
+
+**Fluxo principal:**
+
+1. A pessoa abre a tela de acesso e informa suas credenciais.
+2. O sistema valida as credenciais.
+3. O sistema inicia uma sessão autenticada e mostra as tarefas às quais a pessoa tem acesso.
+
+**Exceções:** credenciais incorretas; conta inexistente ou indisponível; falha temporária de autenticação. A mensagem não deve revelar se um identificador específico possui conta.
+
+**A validar:** método de autenticação e necessidade de recuperação de senha.
+
+### UC-03 — Gerenciar disciplinas
+
+**Ator principal:** estudante autenticado.
+
+**Pré-condição:** a pessoa está autenticada.
+
+**Fluxo principal:**
+
+1. A pessoa abre sua lista de disciplinas.
+2. Cria uma disciplina informando ao menos seu nome.
+3. Pode consultar, editar ou remover disciplinas que administra.
+4. Ao criar ou editar uma tarefa, pode associá-la a uma disciplina, se essa associação for confirmada para o MVP.
+
+**Exceções:** nome ausente ou inválido; tentativa de alterar disciplina de outra pessoa; tentativa de remover uma disciplina que ainda esteja associada a tarefas — o comportamento nesse caso precisa ser definido.
+
+**Proposta a validar:** cada estudante mantém sua própria lista de disciplinas. Também falta definir campos adicionais, como período ou instituição, e como a disciplina aparece para participantes de uma tarefa compartilhada.
+
+### UC-04 — Criar tarefa individual
+
+**Ator principal:** estudante autenticado, que será o responsável principal.
+
+**Pré-condição:** a pessoa está autenticada; a disciplina pode ser associada se já existir e se essa relação fizer parte do MVP.
+
+**Fluxo principal:**
+
+1. A pessoa escolhe criar uma tarefa individual.
+2. Informa título e prazo, além de outros campos que venham a ser definidos.
+3. Opcionalmente associa uma disciplina.
+4. Salva a tarefa.
+5. O sistema registra a pessoa como responsável principal e disponibiliza a tarefa somente a ela.
+
+**Exceções:** título ou prazo ausente ou inválido; disciplina inexistente ou à qual a pessoa não tem acesso; falha ao salvar.
+
+### UC-05 — Criar tarefa compartilhada
+
+**Ator principal:** estudante autenticado, que será o responsável principal.
+
+**Pré-condição:** a pessoa está autenticada.
+
+**Fluxo principal:**
+
+1. A pessoa escolhe criar uma tarefa compartilhada.
+2. Informa título e prazo e, se aplicável, associa uma disciplina.
+3. Salva a tarefa.
+4. O sistema registra a pessoa criadora como responsável principal.
+5. A tarefa fica visível ao criador; outras pessoas passam a vê-la quando receberem acesso conforme o fluxo de convite.
+
+**Exceções:** dados obrigatórios ausentes ou inválidos; disciplina sem acesso; falha ao salvar. Se a pessoa não tiver permissão para administrar a tarefa, o sistema rejeita a operação.
+
+### UC-06 — Convidar participante
+
+**Atores:** responsável principal e estudante convidado.
+
+**Pré-condição:** existe uma tarefa compartilhada que o responsável principal pode administrar.
+
+**Fluxo principal proposto:**
+
+1. O responsável abre a tarefa e escolhe convidar alguém.
+2. Informa um identificador de uma conta existente, como o e-mail ou nome de usuário.
+3. O sistema cria um convite pendente.
+4. O estudante convidado consulta os convites pendentes dentro da plataforma e aceita.
+5. O sistema registra a participação e permite que o novo participante consulte a tarefa.
+
+**Exceções:** conta não encontrada; pessoa já participante; convite já pendente; convite recusado; tentativa de convidar feita por alguém que não é o responsável principal; tarefa não compartilhada.
+
+**A validar:** identificador para localizar colegas, aceite obrigatório, validade do convite e se participantes podem convidar outras pessoas. O fluxo acima é uma proposta de MVP, não uma regra confirmada.
+
+### UC-07 — Gerenciar subtarefas
+
+**Ator principal:** responsável principal.
+
+**Pré-condição:** existe uma tarefa que a pessoa pode administrar; para atribuir uma subtarefa, o responsável escolhido tem acesso à tarefa.
+
+**Fluxo principal:**
+
+1. O responsável abre a tarefa.
+2. Cria uma subtarefa com as informações necessárias.
+3. Opcionalmente atribui a subtarefa a si ou a um participante autorizado.
+4. Pode editar, reatribuir ou remover subtarefas enquanto administra a tarefa.
+5. O sistema atualiza a visão da tarefa para as pessoas autorizadas.
+
+**Exceções:** tentativa de gerenciamento por participante sem permissão; tarefa inexistente ou inacessível; pessoa escolhida não pertence à tarefa; dados inválidos.
+
+### UC-08 — Atualizar progresso de subtarefa
+
+**Ator principal:** participante a quem a subtarefa foi atribuída.
+
+**Pré-condição:** a pessoa está autenticada, tem acesso à tarefa e é a responsável pela subtarefa.
+
+**Fluxo principal:**
+
+1. A pessoa abre uma tarefa compartilhada e seleciona uma subtarefa atribuída a ela.
+2. Atualiza seu progresso.
+3. O sistema valida a permissão e salva a alteração.
+4. O responsável principal e os demais participantes autorizados podem consultar o progresso atualizado.
+
+**Exceções:** subtarefa não atribuída à pessoa; tarefa ou subtarefa removida; pessoa sem acesso à tarefa; estado de progresso inválido; falha ao salvar.
+
+**A validar:** quais estados de progresso serão usados. A matriz de acesso deste documento propõe que o responsável principal também possa atualizar qualquer subtarefa como administrador; falta confirmar se estudantes esperam essa possibilidade e como distinguir uma atualização feita pelo responsável principal daquela feita pela pessoa atribuída.
+
+### UC-09 — Consultar tarefas e prazos
+
+**Ator principal:** estudante autenticado.
+
+**Pré-condição:** a pessoa está autenticada.
+
+**Fluxo principal:**
+
+1. A pessoa abre sua lista de tarefas.
+2. O sistema apresenta suas tarefas individuais e as tarefas compartilhadas às quais ela tem acesso, com os respectivos prazos.
+3. A pessoa abre uma tarefa para consultar seus dados e subtarefas, conforme suas permissões.
+4. A pessoa identifica tarefas próximas do prazo; ordenação e filtros podem ser oferecidos conforme o escopo confirmado.
+
+**Exceções:** nenhuma tarefa cadastrada — o sistema apresenta uma lista vazia com orientação para criar a primeira; tarefa inexistente ou sem permissão — o sistema não revela seus dados; falha ao consultar os dados.
+
+**A validar:** filtros necessários, ordenação padrão e como destacar tarefas atrasadas ou concluídas.
+
+## 11. Stack e arquitetura previstas
 
 - **Back-end:** Java 21 e Spring Boot, com Spring Web para API REST, Spring Data JPA/Hibernate para persistência e Spring Security para autenticação e autorização.
 - **Banco de dados:** PostgreSQL.
@@ -168,6 +331,6 @@ Estas perguntas devem orientar entrevistas curtas e testes de protótipo. As res
 - **Versionamento:** Git e GitHub.
 - **Arquitetura:** monólito modular, inicialmente organizado por domínios e com responsabilidades separadas entre controllers, services, repositories, entities e DTOs. A estrutura deve permanecer simples até haver uma necessidade concreta de maior complexidade.
 
-## 11. Próximo passo recomendado
+## 12. Próximo passo recomendado
 
 Validar primeiro o problema e o fluxo de colaboração com estudantes. Depois, revisar os requisitos marcados como “a validar”, definir os campos e estados mínimos de uma tarefa e transformar o escopo aprovado em etapas pequenas de implementação.
