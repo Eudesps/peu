@@ -30,24 +30,71 @@ Tem acesso a uma tarefa compartilhada da qual participa. Pode visualizar seus da
 
 ### Estudante com tarefa individual
 
-Organiza uma atividade própria. A proposta inicial é que somente seu criador possa acessá-la; essa regra de privacidade deve ser confirmada com estudantes.
+Organiza uma atividade própria. Somente seu criador pode acessá-la, conforme as regras de negócio da seção 4.
 
 **Fora dos perfis iniciais:** professores, coordenadores, administradores institucionais e pessoas sem conta não têm papéis definidos para o MVP.
 
-## 4. Princípios de acesso
+## 4. Regras de negócio e autorização
 
-As permissões devem ser verificadas pelo back-end em cada operação. Ocultar um botão na interface não substitui a autorização no servidor.
+As regras desta seção definem o comportamento proposto para o MVP. O back-end deve aplicá-las em cada operação; esconder uma ação na interface não é controle de acesso.
 
-| Ação | Responsável principal (criador) | Participante da tarefa |
-| --- | --- | --- |
-| Visualizar tarefa compartilhada | Sim | Sim |
-| Alterar dados centrais da tarefa | Sim | Não |
-| Gerenciar participantes | Sim | Não |
-| Criar, alterar ou remover subtarefas | Sim | Não |
-| Atualizar progresso de uma subtarefa atribuída | Sim, como administrador da tarefa | Sim, somente nas subtarefas atribuídas a si |
-| Acessar tarefa individual de outra pessoa | Não | Não se aplica |
+### 4.1 Tipos de tarefa e papéis
 
-O que acontece com o acesso de alguém removido da tarefa, e se o responsável pode atualizar o progresso de qualquer subtarefa, são decisões que ainda precisam ser detalhadas.
+- **Tarefa individual:** pertence à pessoa que a criou. Somente ela pode visualizar ou alterar a tarefa e suas subtarefas. Não aceita participantes nem convites. Uma subtarefa pode ficar sem responsável ou ser atribuída ao criador.
+- **Tarefa compartilhada:** tem exatamente um responsável principal, que é seu criador. O responsável principal não pode ser removido nem transferido no MVP. O tipo da tarefa também não pode ser convertido depois da criação.
+- **Participante:** só passa a ter acesso depois de aceitar o convite. Enquanto o convite está pendente, não pode consultar a tarefa. Uma tarefa compartilhada continua existindo mesmo se ficar sem participantes além do criador.
+- **Responsável por subtarefa:** pode ser o criador ou um participante atual da tarefa. Uma subtarefa também pode ficar sem responsável.
+
+### 4.2 Matriz de permissões
+
+A pessoa responsável por uma subtarefa tem permissão para atualizar o progresso dela. Se essa pessoa for participante, recebe essa permissão adicional às de participante; o criador mantém as permissões administrativas da tarefa.
+
+| Ação | Criador / responsável principal | Participante sem subtarefa atribuída | Participante responsável pela subtarefa |
+| --- | --- | --- | --- |
+| Consultar tarefa compartilhada e subtarefas | Sim | Sim | Sim |
+| Alterar dados centrais, inclusive título e prazo | Sim, se a tarefa estiver aberta | Não | Não |
+| Convidar ou remover participantes em tarefa compartilhada aberta | Sim | Não | Não |
+| Criar, editar, atribuir, reatribuir ou excluir subtarefas | Sim, se a tarefa estiver aberta | Não | Não |
+| Atualizar o progresso de qualquer subtarefa | Sim, se a tarefa estiver aberta | Não | Não |
+| Atualizar o progresso de uma subtarefa atribuída à própria pessoa | Sim | Não | Sim, se a tarefa estiver aberta |
+| Concluir ou reabrir a tarefa | Sim | Não | Não |
+| Excluir a tarefa | Sim, aberta ou concluída | Não | Não |
+| Consultar tarefa individual | Sim, se for sua criadora | Não | Não se aplica |
+
+### 4.3 Convites e remoção de participantes
+
+- Somente o criador pode convidar ou remover participantes enquanto a tarefa compartilhada estiver aberta. Participantes não podem convidar outras pessoas nem remover a si próprios no MVP.
+- O convite é enviado a uma conta existente e precisa ser aceito. A pessoa convidada pode aceitar ou recusar; o criador pode cancelar um convite pendente. Convites pendentes não expiram automaticamente no MVP.
+- Uma pessoa que já participa ou já tem convite pendente não pode receber outro convite para a mesma tarefa. Convites recusados ou cancelados podem ser enviados novamente; uma pessoa removida pode voltar somente após receber e aceitar novo convite.
+- Ao remover um participante, o acesso à tarefa é revogado imediatamente e qualquer convite pendente dessa pessoa é cancelado.
+- Subtarefas atribuídas à pessoa removida ficam sem responsável. O estado de progresso já registrado é mantido; o criador pode atribuí-las a si ou a outro participante atual.
+- A remoção não apaga a tarefa nem as subtarefas. O criador continua responsável principal, mesmo se for a única pessoa com acesso.
+
+### 4.4 Atribuição e progresso de subtarefas
+
+- Somente o criador pode criar, editar, atribuir e reatribuir subtarefas. A pessoa atribuída deve ser o próprio criador ou um participante atual da tarefa compartilhada.
+- Reatribuir uma subtarefa não altera seu progresso. Se a pessoa atribuída for removida da tarefa, a subtarefa fica sem responsável e conserva o progresso atual.
+- O progresso de uma subtarefa tem três estados no MVP: **Pendente**, **Em andamento** e **Concluída**. O criador pode alterar o estado de qualquer subtarefa; um participante pode alterar somente o estado da subtarefa atribuída a si.
+- O progresso pode voltar de **Concluída** para **Em andamento** ou **Pendente** enquanto a tarefa estiver aberta, para permitir correções.
+
+### 4.5 Conclusão, reabertura e exclusão
+
+- A tarefa tem dois estados: **Aberta** e **Concluída**. Cancelamento não é um estado disponível no MVP.
+- Somente o criador pode concluir uma tarefa. Se houver subtarefas, todas devem estar **Concluídas**. Se não houver subtarefas, o criador pode concluí-la diretamente. A conclusão da tarefa não ocorre automaticamente quando as subtarefas terminam.
+- Ao concluir uma tarefa, convites ainda pendentes são cancelados e não podem ser aceitos. Para incluir alguém depois, o criador precisa reabrir a tarefa e enviar um novo convite.
+- Uma tarefa concluída fica bloqueada para alterações de dados, participantes, subtarefas e progresso. Somente o criador pode reabri-la ou excluí-la. Ao reabrir, os estados de progresso existentes são preservados e as alterações voltam a ser permitidas.
+- Somente o criador pode excluir uma subtarefa, e somente enquanto a tarefa estiver aberta. A exclusão remove a subtarefa sem recuperação. Excluir uma subtarefa não conclui automaticamente a tarefa.
+- Somente o criador pode excluir uma tarefa. A exclusão é definitiva e também remove suas subtarefas, participantes e convites pendentes. A interface deve pedir confirmação antes de concluir essa operação.
+
+### 4.6 Regras de autorização no back-end
+
+- Toda operação exige autenticação. Sem autenticação, a requisição é rejeitada.
+- A identidade autenticada no servidor determina quem está fazendo a operação. O sistema não deve confiar em IDs de criador, participante ou responsável enviados pelo cliente para conceder acesso ou definir autoria.
+- O servidor verifica a permissão para cada leitura e alteração, incluindo operações em subtarefas e convites. Para uma subtarefa, também verifica se ela pertence à tarefa indicada e se a pessoa tem acesso à tarefa.
+- A autorização é negada por padrão. Alterações feitas por participante não podem modificar campos administrativos, participantes, atribuições ou progresso de subtarefas alheias, mesmo que esses campos sejam enviados diretamente à API.
+- A permissão é verificada no momento da alteração. Uma pessoa removida não pode continuar alterando a tarefa usando uma sessão ou tela que já estava aberta.
+- A API responde com HTTP 401 quando falta autenticação; com HTTP 404 para recurso inexistente ou inacessível, sem revelar seus dados; e com HTTP 403 para uma ação proibida em uma tarefa que a pessoa pode visualizar.
+- A checagem de permissão e a alteração devem ser consistentes: se o acesso tiver sido revogado, a operação não pode persistir usando permissões antigas.
 
 ## 5. Funcionalidades essenciais do MVP
 
@@ -88,17 +135,18 @@ Os requisitos seguintes descrevem a proposta do MVP. Itens marcados como **a val
 | --- | --- |
 | RF-01 | O sistema deve permitir que uma pessoa crie uma conta e autentique-se. **A validar:** quais dados de cadastro são necessários e se o acesso será por senha, provedor externo ou ambos. |
 | RF-02 | Uma pessoa autenticada deve poder criar uma tarefa individual ou compartilhada. |
-| RF-03 | Toda tarefa deve ter um responsável principal, definido como a pessoa que a criou. |
-| RF-04 | O responsável principal deve poder consultar e alterar os dados centrais de suas tarefas. **A validar:** campos exatos, exclusão e possibilidade de arquivar tarefas concluídas. |
+| RF-03 | Toda tarefa deve ter um responsável principal, definido como a pessoa que a criou. No MVP, o responsável principal e o tipo da tarefa não podem ser alterados. |
+| RF-04 | Somente o criador pode consultar e alterar os dados centrais de sua tarefa. A exclusão é definitiva e remove subtarefas, participantes e convites pendentes. Tarefas concluídas precisam ser reabertas antes de alterar seus dados, participantes ou subtarefas; somente o criador pode excluí-las sem reabrir. |
 | RF-05 | Uma pessoa deve poder listar suas tarefas individuais e as tarefas compartilhadas às quais tem acesso. |
-| RF-06 | O responsável principal deve poder incluir e remover participantes de uma tarefa compartilhada. **A validar:** como localizar colegas e se eles precisam aceitar um convite. |
-| RF-07 | O responsável principal deve poder criar, editar e remover subtarefas de uma tarefa que administra. |
-| RF-08 | Cada subtarefa pode ter um responsável escolhido entre as pessoas autorizadas na tarefa. **A validar:** se uma subtarefa pode ficar sem responsável e se o criador pode atribuí-la a si. |
+| RF-06 | Somente o responsável principal pode convidar ou remover participantes enquanto a tarefa compartilhada estiver aberta. O convite precisa ser aceito; a remoção revoga o acesso imediatamente, cancela convite pendente e deixa sem responsável as subtarefas da pessoa removida, preservando o progresso. Ao concluir a tarefa, convites pendentes são cancelados. |
+| RF-07 | O responsável principal pode criar, editar, reatribuir e remover subtarefas enquanto a tarefa estiver aberta. |
+| RF-08 | Cada subtarefa pode ficar sem responsável ou ser atribuída pelo responsável principal a si mesmo ou a um participante atual da tarefa. |
 | RF-09 | Uma pessoa participante deve poder consultar as tarefas compartilhadas às quais foi adicionada. |
-| RF-10 | Uma pessoa participante deve poder atualizar o progresso somente das subtarefas atribuídas a ela. |
+| RF-10 | O responsável principal pode atualizar o progresso de qualquer subtarefa; um participante pode atualizar somente a subtarefa atribuída a si. O progresso tem os estados Pendente, Em andamento e Concluída. |
 | RF-11 | O sistema deve negar no servidor qualquer leitura ou alteração feita por pessoa sem a permissão correspondente. |
 | RF-12 | O sistema deve informar quando uma operação falhar por dados inválidos, recurso não encontrado ou permissão insuficiente, sem revelar dados de tarefas não autorizadas. |
 | RF-13 | A listagem deve permitir identificar tarefas próximas do prazo. **A validar:** filtros, ordenação e estados que estudantes precisam ver. |
+| RF-14 | Somente o responsável principal pode concluir ou reabrir a tarefa. Para concluir, todas as subtarefas devem estar concluídas; uma tarefa sem subtarefas pode ser concluída diretamente. A conclusão não é automática. |
 
 ## 8. Requisitos não funcionais
 
@@ -131,17 +179,17 @@ Estas perguntas devem orientar entrevistas curtas e testes de protótipo. As res
 
 - Quais tipos de atividade devem ser organizados: trabalhos, provas, leituras, apresentações ou outros?
 - Além de título e prazo, quais dados são indispensáveis? Por exemplo, disciplina, descrição, link ou prioridade.
-- Como estudantes entendem o progresso: estados como “a fazer / em andamento / concluída”, percentual ou outra forma?
-- O estado da tarefa principal deve ser manual ou calculado a partir das subtarefas?
-- Como devem funcionar tarefas atrasadas, concluídas, canceladas e excluídas?
+- Os rótulos **Pendente**, **Em andamento** e **Concluída** são claros para estudantes? Eles precisam de algum estado adicional no MVP?
+- Faz sentido exigir que todas as subtarefas estejam concluídas antes de concluir a tarefa? Para tarefas sem subtarefas, a conclusão direta pelo criador é suficiente?
+- A exclusão definitiva da tarefa, junto com participantes e subtarefas, corresponde às expectativas? Seria necessário arquivar ou recuperar itens excluídos?
+- Estudantes precisam de um estado **Cancelada** para atividades que não serão realizadas?
 
 ### Grupos e responsabilidades
 
 - Como identificar e adicionar colegas: nome de usuário, e-mail, link de convite ou código?
-- Um convite precisa ser aceito antes de conceder acesso?
-- Participantes podem convidar outras pessoas, ou somente quem criou a tarefa?
-- O responsável principal deve poder editar o progresso de todas as subtarefas?
-- O que acontece com subtarefas e autoria quando alguém sai ou é removido do grupo?
+- O fluxo do MVP — convite enviado somente pelo criador, com aceite do convidado — atende aos grupos de estudantes?
+- O que estudantes esperam que aconteça com o progresso quando uma pessoa removida deixa subtarefas sem responsável?
+- Participantes precisam poder sair voluntariamente de uma tarefa, além de poderem ser removidos pelo criador?
 - Como estudantes percebem uma divisão de trabalho injusta? É necessário mostrar carga por participante no MVP?
 
 ### Uso e prioridade
@@ -154,7 +202,7 @@ Estas perguntas devem orientar entrevistas curtas e testes de protótipo. As res
 
 ### Privacidade e conta
 
-- Uma tarefa individual deve ser sempre privada? Há situações em que estudantes querem compartilhá-la depois?
+- A regra de tarefas individuais privadas corresponde às expectativas dos estudantes?
 - Quais dados pessoais são realmente necessários para criar uma conta?
 - O que a pessoa espera que aconteça com seus dados quando encerra a conta?
 
@@ -257,52 +305,51 @@ Responsável principal, participante e estudante convidado são papéis que um m
 
 **Atores:** responsável principal e estudante convidado.
 
-**Pré-condição:** existe uma tarefa compartilhada que o responsável principal pode administrar.
+**Pré-condição:** existe uma tarefa compartilhada aberta que o responsável principal pode administrar.
 
-**Fluxo principal proposto:**
+**Fluxo principal:**
 
 1. O responsável abre a tarefa e escolhe convidar alguém.
 2. Informa um identificador de uma conta existente, como o e-mail ou nome de usuário.
 3. O sistema cria um convite pendente.
-4. O estudante convidado consulta os convites pendentes dentro da plataforma e aceita.
-5. O sistema registra a participação e permite que o novo participante consulte a tarefa.
+4. O estudante convidado consulta o convite dentro da plataforma e aceita ou recusa.
+5. Se aceitar, o sistema registra a participação e permite consultar a tarefa. Se recusar, encerra o convite e não concede acesso.
 
-**Exceções:** conta não encontrada; pessoa já participante; convite já pendente; convite recusado; tentativa de convidar feita por alguém que não é o responsável principal; tarefa não compartilhada.
+**Exceções:** conta não encontrada; pessoa já participante; convite já pendente; convite recusado ou cancelado; tarefa concluída; tentativa de convidar feita por alguém que não é o responsável principal; tarefa não compartilhada.
 
-**A validar:** identificador para localizar colegas, aceite obrigatório, validade do convite e se participantes podem convidar outras pessoas. O fluxo acima é uma proposta de MVP, não uma regra confirmada.
+**A validar:** identificador usado para localizar colegas e se a ausência de expiração automática é adequada para convites pendentes.
 
 ### UC-07 — Gerenciar subtarefas
 
 **Ator principal:** responsável principal.
 
-**Pré-condição:** existe uma tarefa que a pessoa pode administrar; para atribuir uma subtarefa, o responsável escolhido tem acesso à tarefa.
+**Pré-condição:** existe uma tarefa aberta que a pessoa pode administrar; para atribuir uma subtarefa, o responsável escolhido é o criador ou um participante atual.
 
 **Fluxo principal:**
 
 1. O responsável abre a tarefa.
 2. Cria uma subtarefa com as informações necessárias.
 3. Opcionalmente atribui a subtarefa a si ou a um participante autorizado.
-4. Pode editar, reatribuir ou remover subtarefas enquanto administra a tarefa.
+4. Pode editar, reatribuir ou remover subtarefas enquanto a tarefa estiver aberta.
 5. O sistema atualiza a visão da tarefa para as pessoas autorizadas.
 
-**Exceções:** tentativa de gerenciamento por participante sem permissão; tarefa inexistente ou inacessível; pessoa escolhida não pertence à tarefa; dados inválidos.
+**Exceções:** tentativa de gerenciamento por participante sem permissão; tarefa inexistente ou inacessível; tarefa concluída (o criador precisa reabri-la); pessoa escolhida não pertence à tarefa; dados inválidos.
 
 ### UC-08 — Atualizar progresso de subtarefa
 
-**Ator principal:** participante a quem a subtarefa foi atribuída.
+**Atores:** responsável principal ou participante a quem a subtarefa foi atribuída.
 
-**Pré-condição:** a pessoa está autenticada, tem acesso à tarefa e é a responsável pela subtarefa.
+**Pré-condição:** a pessoa está autenticada e a tarefa está aberta. Se for participante, precisa ter acesso à tarefa e ser responsável pela subtarefa.
 
 **Fluxo principal:**
 
-1. A pessoa abre uma tarefa compartilhada e seleciona uma subtarefa atribuída a ela.
-2. Atualiza seu progresso.
-3. O sistema valida a permissão e salva a alteração.
-4. O responsável principal e os demais participantes autorizados podem consultar o progresso atualizado.
+1. A pessoa abre a tarefa e seleciona uma subtarefa.
+2. O responsável principal pode atualizar o progresso de qualquer subtarefa; um participante só pode atualizar a subtarefa atribuída a si.
+3. A pessoa seleciona Pendente, Em andamento ou Concluída.
+4. O sistema valida a permissão e salva a alteração.
+5. As pessoas autorizadas podem consultar o progresso atualizado.
 
-**Exceções:** subtarefa não atribuída à pessoa; tarefa ou subtarefa removida; pessoa sem acesso à tarefa; estado de progresso inválido; falha ao salvar.
-
-**A validar:** quais estados de progresso serão usados. A matriz de acesso deste documento propõe que o responsável principal também possa atualizar qualquer subtarefa como administrador; falta confirmar se estudantes esperam essa possibilidade e como distinguir uma atualização feita pelo responsável principal daquela feita pela pessoa atribuída.
+**Exceções:** participante tenta alterar subtarefa não atribuída a si; tarefa ou subtarefa removida; tarefa concluída; pessoa sem acesso à tarefa; estado de progresso inválido; falha ao salvar.
 
 ### UC-09 — Consultar tarefas e prazos
 
