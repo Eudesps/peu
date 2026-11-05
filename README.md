@@ -536,15 +536,116 @@ Chaves estrangeiras, `UNIQUE` e `CHECK` cobrem referências básicas, duplicidad
 
 As principais decisões a validar antes de criar migrations são: login local ou provedor externo; prazo apenas por data ou com horário; se uma disciplina é identificada também por período; e o comportamento de encerramento de conta. A modelagem acima não gera migrations nem define endpoints.
 
-## 12. Stack e arquitetura previstas
+## 12. Arquitetura inicial
 
-- **Back-end:** Java 21 e Spring Boot, com Spring Web para API REST, Spring Data JPA/Hibernate para persistência e Spring Security para autenticação e autorização.
-- **Banco de dados:** PostgreSQL.
-- **Migrações:** Flyway.
+A aplicação começa como um **monólito modular**: uma aplicação Spring Boot implantável e um banco PostgreSQL, com código agrupado por domínio. Os módulos não fazem chamadas de rede entre si; cada domínio expõe seus serviços às outras partes da aplicação por chamadas Java locais. Isso permite começar com poucos componentes e manter as regras de cada domínio localizáveis.
+
+### 12.1 Fluxo de uma requisição
+
+```mermaid
+flowchart LR
+    Browser["Navegador<br/>HTML, CSS e JavaScript"] -->|HTTPS e JSON via fetch| Security["Spring Security<br/>autenticação"]
+    Security --> Controller["Spring Web<br/>Controllers REST"]
+    Controller --> Service["Services<br/>regras, autorização e transações"]
+    Service --> Repository["Repositories<br/>Spring Data JPA"]
+    Repository --> Hibernate["Hibernate<br/>mapeamento objeto-relacional"]
+    Hibernate --> Database[("PostgreSQL")]
+    Flyway["Flyway<br/>migrações SQL versionadas"] --> Database
+```
+
+O navegador envia uma requisição HTTP à API; Spring Security identifica a pessoa autenticada; o controller converte a entrada em DTOs e chama o service; o service valida permissões e regras de negócio e usa um repository; Spring Data JPA e Hibernate persistem os dados no PostgreSQL. O resultado volta como DTO e resposta HTTP. Flyway aplica as migrações versionadas na inicialização da aplicação.
+
+### 12.2 Organização de pacotes
+
+O nome base abaixo é ilustrativo e deve ser substituído pelo `groupId` escolhido para o projeto.
+
+```text
+src/main/java/br/com/organizacaoacademica/
+├── OrganizacaoAcademicaApplication.java
+├── config/
+│   ├── security/
+│   └── web/
+├── usuario/
+│   ├── controller/
+│   ├── service/
+│   ├── repository/
+│   ├── entity/
+│   └── dto/
+├── disciplina/
+│   ├── controller/
+│   ├── service/
+│   ├── repository/
+│   ├── entity/
+│   └── dto/
+└── tarefa/
+    ├── controller/
+    ├── service/
+    ├── repository/
+    ├── entity/
+    └── dto/
+
+src/main/resources/
+├── db/migration/        # futuras migrations Flyway
+└── static/              # HTML, CSS e JavaScript da primeira versão
+
+src/test/java/br/com/organizacaoacademica/  # testes organizados pelos mesmos domínios
+```
+
+- **`usuario`:** cadastro e consulta dos dados da conta. A configuração de autenticação e os filtros do Spring Security ficam em `config/security`.
+- **`disciplina`:** criação, consulta, edição e remoção de disciplinas, respeitando a propriedade do usuário.
+- **`tarefa`:** tarefas, participantes, convites e subtarefas. Essas partes ficam juntas inicialmente porque as regras de conclusão, remoção de participantes e atribuição de subtarefas atravessam as mesmas operações e precisam de transações consistentes.
+- **`config`:** configuração da aplicação e componentes realmente transversais, como segurança e tratamento uniforme de erros HTTP. Evitar transformá-lo em um módulo genérico de regras de negócio.
+
+As responsabilidades aparecem em cada domínio; por exemplo, `tarefa.controller`, `tarefa.service`, `tarefa.repository`, `tarefa.entity` e `tarefa.dto`. Se uma área crescer, seus pacotes internos podem ser subdivididos depois. Não são necessários módulos Maven separados, interfaces para todo service ou uma camada genérica de base no início.
+
+### 12.3 Responsabilidades das camadas
+
+| Camada | Responsabilidade | O que deve evitar |
+| --- | --- | --- |
+| **Controller** | Declarar rotas REST, receber parâmetros e DTOs, chamar services e escolher status HTTP. | Implementar regra de negócio, acessar banco diretamente ou devolver entidades JPA. |
+| **DTO** | Definir os dados aceitos e devolvidos pela API; concentrar validações simples de formato e campos obrigatórios. | Representar uma entidade persistente ou permitir que o cliente escolha seu criador por ID. |
+| **Service** | Aplicar regras de negócio e autorização para o recurso; coordenar alterações em tarefa, participantes, convites e subtarefas dentro de transações. | Tornar-se uma classe única para todos os domínios ou repetir a lógica do controller. |
+| **Repository** | Consultar e persistir entidades usando Spring Data JPA; oferecer consultas que respeitem o escopo necessário. | Decidir permissões de negócio ou retornar dados de tarefas sem verificar o acesso no service. |
+| **Entity** | Mapear tabelas e relacionamentos JPA e manter invariantes locais simples. | Ser exposta diretamente em respostas HTTP ou conter dependência do controller. |
+| **Spring Security** | Autenticar requisições, manter a identidade do usuário autenticado e proteger rotas. | Substituir verificações de acesso ao dono, participante ou responsável de cada tarefa. |
+
+Os DTOs de requisição e resposta podem ser `record`s Java quando forem apenas estruturas de dados. Um conversor manual pequeno é suficiente inicialmente; uma biblioteca de mapeamento só deve ser adicionada quando houver volume que justifique sua manutenção.
+
+### 12.4 Limites entre domínios e autorização
+
+- O domínio `tarefa` é responsável pelas regras de tarefas individuais e compartilhadas, convites, participantes, atribuições, progresso, conclusão e exclusão.
+- O domínio `disciplina` é dono das disciplinas. Uma tarefa guarda uma referência à disciplina opcional e só pode apontar para uma disciplina do seu criador, conforme o modelo relacional.
+- Serviços de um domínio não devem alterar diretamente as regras internas de outro. Quando uma operação atravessar domínios, deve chamar uma operação explícita do serviço responsável; manter as dependências em uma direção para evitar ciclos.
+- Spring Security fornece a identidade autenticada. O serviço usa essa identidade para confirmar propriedade, participação ou responsabilidade pela subtarefa. IDs enviados pelo navegador não concedem acesso.
+- Operações como aceitar convite, remover participante e suas atribuições, concluir tarefa e excluir tarefa devem ser transacionais para que uma falha não deixe apenas parte das alterações persistida.
+- A aplicação começa sem event bus, microserviços, CQRS ou padrão de repositório customizado além das interfaces Spring Data JPA. Cada peça pode ser considerada quando houver uma necessidade concreta.
+
+### 12.5 Comunicação com o front-end
+
+- Na primeira versão, o Spring Boot pode servir os arquivos HTML, CSS e JavaScript a partir de `src/main/resources/static`. O navegador usa `fetch()` para chamar a API JSON no mesmo domínio, sob o prefixo `/api/v1`.
+- O front-end não acessa PostgreSQL. Ele envia dados de entrada e apresenta as respostas; regras de permissão e validações importantes permanecem no servidor.
+- Controllers recebem e retornam DTOs. Erros de validação, falta de autenticação, falta de permissão e recursos inacessíveis devem usar respostas HTTP coerentes e um formato JSON uniforme, preparado por um tratador central simples.
+- Para um front-end próprio do navegador servido no mesmo domínio, a proposta inicial é usar uma sessão gerenciada pelo Spring Security em cookie `HttpOnly`, `Secure` em produção e `SameSite`, com proteção CSRF para operações que alteram dados. O método de cadastro e autenticação ainda precisa ser escolhido; se a interface passar a ser servida de outra origem, configurar CORS para essa origem específica e revisar a estratégia de cookies e CSRF.
+
+### 12.6 Persistência e migrações
+
+- **Java:** Java 21.
+- **Framework:** Spring Boot e Spring Web para controllers REST.
+- **Persistência:** Spring Data JPA e Hibernate, com PostgreSQL como banco relacional.
+- **Autenticação e autorização:** Spring Security; as regras por tarefa também são verificadas nos services.
+- **Esquema:** Flyway será a fonte de verdade para criar e evoluir o banco, com scripts SQL versionados em `src/main/resources/db/migration/`.
 - **Build:** Maven.
-- **Front-end:** HTML, CSS e JavaScript.
+- **Front-end:** HTML, CSS e JavaScript servidos inicialmente pela mesma aplicação.
 - **Versionamento:** Git e GitHub.
-- **Arquitetura:** monólito modular, inicialmente organizado por domínios e com responsabilidades separadas entre controllers, services, repositories, entities e DTOs. A estrutura deve permanecer simples até haver uma necessidade concreta de maior complexidade.
+
+Depois de criar a primeira migration, Hibernate deve validar o mapeamento contra o esquema versionado (`ddl-auto=validate`), sem modificar automaticamente tabelas. As migrations serão preparadas em uma etapa futura, após as decisões pendentes do modelo de dados.
+
+### 12.7 Testes por camada
+
+- Testes unitários de services cobrem regras de autorização e negócio, usando JUnit 5 e Mockito.
+- Testes de controller verificam rotas, validação de DTOs, autenticação e respostas HTTP.
+- Testes de integração de repositories e migrations usam PostgreSQL de teste para conferir constraints e consultas.
+- Os testes ficam sob `src/test/java` espelhando os pacotes dos domínios. Testes não substituem a verificação de autorização no código de produção.
 
 ## 13. Próximo passo recomendado
 
