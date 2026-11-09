@@ -633,12 +633,12 @@ Os DTOs de requisição e resposta podem ser `record`s Java quando forem apenas 
 - **Framework:** Spring Boot e Spring Web para controllers REST.
 - **Persistência:** Spring Data JPA e Hibernate, com PostgreSQL como banco relacional.
 - **Autenticação e autorização:** Spring Security; as regras por tarefa também são verificadas nos services.
-- **Esquema:** Flyway será a fonte de verdade para criar e evoluir o banco, com scripts SQL versionados em `src/main/resources/db/migration/`.
+- **Esquema:** Flyway está habilitado como fonte de verdade para criar e evoluir o banco, com scripts SQL versionados em `src/main/resources/db/migration/`.
 - **Build:** Maven.
 - **Front-end:** HTML, CSS e JavaScript servidos inicialmente pela mesma aplicação.
 - **Versionamento:** Git e GitHub.
 
-Depois de criar a primeira migration, Hibernate deve validar o mapeamento contra o esquema versionado (`ddl-auto=validate`), sem modificar automaticamente tabelas. As migrations serão preparadas em uma etapa futura, após as decisões pendentes do modelo de dados.
+Hibernate está configurado com `ddl-auto=none` enquanto não há entidades nem migration inicial. Depois de criar e validar a primeira migration, a configuração poderá mudar para `ddl-auto=validate`, para conferir os mapeamentos sem alterar tabelas. A migration inicial continua pendente das decisões de modelo listadas na seção 11.4.
 
 ### 12.7 Testes por camada
 
@@ -650,3 +650,76 @@ Depois de criar a primeira migration, Hibernate deve validar o mapeamento contra
 ## 13. Próximo passo recomendado
 
 Validar primeiro o problema e o fluxo de colaboração com estudantes. Depois, revisar os requisitos marcados como “a validar”, definir os campos e estados mínimos de uma tarefa e transformar o escopo aprovado em etapas pequenas de implementação.
+
+## 14. Instalação, configuração e execução
+
+### Pré-requisitos
+
+- JDK 21.
+- PostgreSQL em execução e um banco chamado `organizacao_academica` criado. O usuário informado à aplicação precisa ter permissão para conectar ao banco e criar objetos no schema usado pelas migrations.
+- Não é necessário instalar Maven globalmente: o Maven Wrapper (`mvnw`/`mvnw.cmd`) usa a versão definida pelo projeto.
+
+As dependências e seus papéis estão declarados no `pom.xml`. O Spring Boot gerencia as versões compatíveis:
+
+| Dependência | Finalidade |
+| --- | --- |
+| `spring-boot-starter-webmvc` | API REST com Spring MVC. |
+| `spring-boot-starter-data-jpa` | Persistência JPA com Hibernate. |
+| `org.postgresql:postgresql` | Driver JDBC do PostgreSQL, em escopo de execução. |
+| `spring-boot-starter-validation` | Validação de entradas. |
+| `spring-boot-starter-security` | Base de autenticação e autorização web. |
+| `spring-boot-starter-flyway` e `flyway-database-postgresql` | Migrations Flyway e integração específica com PostgreSQL. |
+| `spring-boot-starter-test` | Suporte a testes, em escopo de teste. |
+
+### Configuração do banco
+
+`src/main/resources/application.properties` lê estas variáveis:
+
+| Variável | Uso | Valor padrão |
+| --- | --- | --- |
+| `DB_URL` | URL JDBC do banco. | `jdbc:postgresql://localhost:5432/organizacao_academica` |
+| `DB_USERNAME` | Usuário do PostgreSQL. | Obrigatória, sem padrão. |
+| `DB_PASSWORD` | Senha do PostgreSQL. | Obrigatória, sem padrão. |
+
+As variáveis do ambiente têm precedência sobre os valores dos arquivos de configuração. Elas devem estar disponíveis no mesmo processo que inicia o Maven e a aplicação. No PowerShell, execute na raiz do projeto:
+
+```powershell
+$env:DB_URL = 'jdbc:postgresql://localhost:5432/organizacao_academica'
+$env:DB_USERNAME = Read-Host 'Usuário do PostgreSQL'
+$senhaSegura = Read-Host 'Senha do PostgreSQL' -AsSecureString
+$env:DB_PASSWORD = [System.Net.NetworkCredential]::new('', $senhaSegura).Password
+
+try {
+    .\mvnw.cmd spring-boot:run
+}
+finally {
+    Remove-Item Env:DB_PASSWORD -ErrorAction SilentlyContinue
+    Remove-Variable senhaSegura -ErrorAction SilentlyContinue
+}
+```
+
+No macOS/Linux, defina `DB_URL`, `DB_USERNAME` e `DB_PASSWORD` no shell e execute `./mvnw spring-boot:run`. Remova as variáveis com `unset DB_URL DB_USERNAME DB_PASSWORD` quando terminar.
+
+Também é possível guardar a configuração de desenvolvimento em `config/application.properties`, arquivo local já ignorado pelo Git. Não coloque credenciais em `src/main/resources/application.properties` nem em arquivos rastreados.
+
+O projeto não possui carregador de arquivos `.env`; o Spring Boot não lê `.env` automaticamente. Por isso não há `.env.example`. `.env` e arquivos `.env.*` locais são ignorados pelo Git; use as variáveis do processo ou o arquivo local indicado acima.
+
+### Executar a aplicação
+
+Na raiz do repositório:
+
+```powershell
+java -version
+.\mvnw.cmd --version
+.\mvnw.cmd spring-boot:run
+```
+
+No macOS/Linux, use `./mvnw --version` e `./mvnw spring-boot:run`. A primeira execução pode baixar dependências do Maven. O Spring Security ainda usa a configuração padrão e protege as requisições; endpoints e autenticação próprios serão implementados em etapas posteriores.
+
+### Flyway e migrations
+
+Flyway está habilitado em `application.properties` e procura migrations SQL em `src/main/resources/db/migration/`. O Spring Boot chama `Flyway.migrate()` durante a inicialização. Portanto, depois de adicionar um script e iniciar a aplicação com acesso ao banco, Flyway valida o histórico e aplica as versões ainda pendentes. [A documentação do Spring Boot descreve o starter, o módulo PostgreSQL, a localização padrão e a execução na inicialização](https://docs.spring.io/spring-boot/how-to/data-initialization.html).
+
+Use nomes versionados no formato `V<VERSÃO>__<descrição>.sql`, por exemplo `V1__create_initial_schema.sql` e depois `V2__add_task_index.sql`. Uma migration versionada aplicada não deve ser editada; mudanças posteriores devem entrar em um novo arquivo e nova versão. Flyway registra as versões e seus checksums em `flyway_schema_history`. [Referência oficial de migrations versionadas](https://documentation.red-gate.com/fd/versioned-migrations-273973333.html).
+
+**Ainda não há migration `V1` neste repositório.** O modelo da seção 11 mantém decisões pendentes, então esta configuração não cria as tabelas de negócio. Na inicialização, Flyway pode criar sua tabela de histórico; quando o modelo for fechado, adicione `V1__...sql` à pasta indicada e inicie novamente a aplicação para aplicá-la. Hibernate permanece com `ddl-auto=none` para não competir com Flyway na criação do esquema. Spring Boot recomenda usar um único mecanismo de inicialização do esquema. [Documentação de inicialização de banco](https://docs.spring.io/spring-boot/how-to/data-initialization.html).
