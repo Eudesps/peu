@@ -159,7 +159,7 @@ Os requisitos seguintes descrevem a proposta do MVP. Itens marcados como **a val
 | RNF-05 | **Compatibilidade:** a interface web deve funcionar nos navegadores modernos definidos para o projeto. **A validar:** suporte mínimo a celulares e navegadores específicos. |
 | RNF-06 | **Manutenibilidade:** o back-end deve usar Java 21, Spring Boot e um monólito modular organizado por domínios, com separação clara entre controllers, services, repositories, entities e DTOs. |
 | RNF-07 | **Persistência e evolução:** PostgreSQL será o banco previsto; mudanças de esquema devem ser versionadas com Flyway. |
-| RNF-08 | **Qualidade:** regras importantes de negócio e autorização devem ter testes automatizados adequados, usando JUnit 5, Mockito e Spring Boot Test quando fizer sentido. |
+| RNF-08 | **Qualidade:** regras importantes de negócio e autorização devem ter testes automatizados adequados, usando JUnit Jupiter, Mockito e Spring Boot Test quando fizer sentido. |
 | RNF-09 | **Configuração segura:** segredos e credenciais não devem ser incluídos no repositório; configurações de ambiente devem permitir executar a aplicação sem expor esses valores. |
 | RNF-10 | **Desempenho e disponibilidade:** metas quantitativas ainda não foram definidas. Devem ser estabelecidas depois de estimar quantidade de usuários, volume de dados e ambiente de hospedagem. |
 | RNF-11 | **Acessibilidade e idioma:** o idioma inicial e o nível de acessibilidade esperado ainda precisam ser definidos e avaliados com usuários. |
@@ -370,7 +370,7 @@ Responsável principal, participante e estudante convidado são papéis que um m
 
 ## 11. Proposta de modelo relacional
 
-Esta é uma proposta lógica para PostgreSQL, ainda não uma migration. Ela mantém criador, participantes aceitos e convites pendentes como conceitos separados. Os nomes físicos abaixo usam `snake_case`.
+Este modelo lógico para PostgreSQL mantém criador, participantes aceitos e convites pendentes como conceitos separados. A migration `V1` implementa somente `usuario`; as demais entidades descritas aqui continuam como proposta até suas decisões pendentes serem validadas. Os nomes físicos usam `snake_case`.
 
 ### 11.1 Diagrama ER
 
@@ -638,13 +638,13 @@ Os DTOs de requisição e resposta podem ser `record`s Java quando forem apenas 
 - **Front-end:** HTML, CSS e JavaScript servidos inicialmente pela mesma aplicação.
 - **Versionamento:** Git e GitHub.
 
-Hibernate está configurado com `ddl-auto=none` enquanto não há entidades nem migration inicial. Depois de criar e validar a primeira migration, a configuração poderá mudar para `ddl-auto=validate`, para conferir os mapeamentos sem alterar tabelas. A migration inicial continua pendente das decisões de modelo listadas na seção 11.4.
+Hibernate está configurado com `ddl-auto=none`; a entidade `Usuario` e sua migration já existem, mas as outras entidades ainda não foram implementadas. Quando os mapeamentos e migrations correspondentes estiverem completos, a configuração poderá mudar para `ddl-auto=validate`, para conferir o esquema sem alterá-lo. As decisões ainda pendentes para as outras tabelas estão listadas na seção 11.4.
 
 ### 12.7 Testes por camada
 
-- Testes unitários de services cobrem regras de autorização e negócio, usando JUnit 5 e Mockito.
+- Testes unitários de services cobrem regras de autorização e negócio, usando JUnit Jupiter 6 e Mockito. O Spring Framework 7 requer JUnit Jupiter 6 para a integração TestContext; essa versão foi escolhida para permanecer no Spring Boot 4. [Referência oficial do Spring Framework](https://docs.spring.io/spring-framework/reference/testing/testcontext-framework/support-classes.html).
 - Testes de controller verificam rotas, validação de DTOs, autenticação e respostas HTTP.
-- Testes de integração de repositories e migrations usam PostgreSQL de teste para conferir constraints e consultas.
+- Testes de integração de repositories e migrations usam PostgreSQL de teste para conferir constraints e consultas. O teste atual de `UsuarioRepository` usa o PostgreSQL configurado e reverte os dados de cada teste ao final.
 - Os testes ficam sob `src/test/java` espelhando os pacotes dos domínios. Testes não substituem a verificação de autorização no código de produção.
 
 ## 13. Próximo passo recomendado
@@ -670,6 +670,7 @@ As dependências e seus papéis estão declarados no `pom.xml`. O Spring Boot ge
 | `spring-boot-starter-security` | Base de autenticação e autorização web. |
 | `spring-boot-starter-flyway` e `flyway-database-postgresql` | Migrations Flyway e integração específica com PostgreSQL. |
 | `spring-boot-starter-test` | Suporte a testes, em escopo de teste. |
+| `spring-boot-starter-data-jpa-test` | Suporte focalizado a testes `@DataJpaTest` de repositórios JPA. |
 
 ### Configuração do banco
 
@@ -716,10 +717,22 @@ java -version
 
 No macOS/Linux, use `./mvnw --version` e `./mvnw spring-boot:run`. A primeira execução pode baixar dependências do Maven. O Spring Security ainda usa a configuração padrão e protege as requisições; endpoints e autenticação próprios serão implementados em etapas posteriores.
 
+Para executar os testes, configure o acesso ao PostgreSQL como acima e rode `.\mvnw.cmd test` no PowerShell ou `./mvnw test` no macOS/Linux. O teste de repositório usa o banco configurado, aplica migrations pendentes via Flyway e faz rollback dos registros de teste.
+
 ### Flyway e migrations
 
 Flyway está habilitado em `application.properties` e procura migrations SQL em `src/main/resources/db/migration/`. O Spring Boot chama `Flyway.migrate()` durante a inicialização. Portanto, depois de adicionar um script e iniciar a aplicação com acesso ao banco, Flyway valida o histórico e aplica as versões ainda pendentes. [A documentação do Spring Boot descreve o starter, o módulo PostgreSQL, a localização padrão e a execução na inicialização](https://docs.spring.io/spring-boot/how-to/data-initialization.html).
 
 Use nomes versionados no formato `V<VERSÃO>__<descrição>.sql`, por exemplo `V1__create_initial_schema.sql` e depois `V2__add_task_index.sql`. Uma migration versionada aplicada não deve ser editada; mudanças posteriores devem entrar em um novo arquivo e nova versão. Flyway registra as versões e seus checksums em `flyway_schema_history`. [Referência oficial de migrations versionadas](https://documentation.red-gate.com/fd/versioned-migrations-273973333.html).
 
-**Ainda não há migration `V1` neste repositório.** O modelo da seção 11 mantém decisões pendentes, então esta configuração não cria as tabelas de negócio. Na inicialização, Flyway pode criar sua tabela de histórico; quando o modelo for fechado, adicione `V1__...sql` à pasta indicada e inicie novamente a aplicação para aplicá-la. Hibernate permanece com `ddl-auto=none` para não competir com Flyway na criação do esquema. Spring Boot recomenda usar um único mecanismo de inicialização do esquema. [Documentação de inicialização de banco](https://docs.spring.io/spring-boot/how-to/data-initialization.html).
+`V1__create_usuario.sql` cria somente a tabela `usuario`. Ao iniciar a aplicação, Flyway registra e aplica essa versão se ainda não estiver no histórico. Ainda não há migrations para disciplina, tarefa, participantes, convites ou subtarefas; essas tabelas dependem das decisões pendentes do modelo da seção 11.4. Hibernate permanece com `ddl-auto=none` para não competir com Flyway na criação do esquema. Spring Boot recomenda usar um único mecanismo de inicialização do esquema. [Documentação de inicialização de banco](https://docs.spring.io/spring-boot/how-to/data-initialization.html).
+
+## 15. Implementação inicial de Usuario
+
+A entidade `Usuario` mapeia `id`, `nome`, `email`, `senha_hash` e `criado_em`. A migration `V1__create_usuario.sql` mantém os tamanhos e nulabilidade do modelo, cria o identificador `BIGINT` identity, impede nome/e-mail/hash vazio no PostgreSQL e cria um índice único por `lower(btrim(email))`. A entidade também remove espaços periféricos e normaliza e-mail com `Locale.ROOT` antes de persistir, enquanto o índice protege contra duplicidade mesmo em inserções fora da aplicação.
+
+`Usuario` não implementa `UserDetails` diretamente. Quando a autenticação for implementada, um `UserDetailsService` poderá buscar a conta pelo e-mail normalizado e adaptar `email` como identificador e `senha_hash` como a senha codificada. O serviço de cadastro deverá gerar o hash com um `PasswordEncoder` antes de criar a entidade; a entidade não recebe nem armazena senha em texto puro. Não existe coluna de papel global porque as permissões do produto são definidas por tarefa.
+
+A migration assume autenticação local por e-mail e senha, conforme o modelo atual. Se a decisão futura for autenticação exclusivamente por provedor externo, será necessário revisar `senha_hash` e a estratégia de identidade antes de ampliar o esquema.
+
+O repositório `UsuarioRepository` oferece busca de e-mail sem diferenciar maiúsculas e minúsculas para uso futuro no `UserDetailsService`. O serviço de autenticação também deve remover espaços periféricos antes da busca. A API ainda não expõe nem autentica esta entidade.
