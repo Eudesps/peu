@@ -250,7 +250,7 @@ Responsável principal, participante e estudante convidado são papéis que um m
 
 **Exceções:** credenciais incorretas; conta inexistente ou indisponível; falha temporária de autenticação. A mensagem não deve revelar se um identificador específico possui conta.
 
-**A validar:** método de autenticação e necessidade de recuperação de senha.
+**Decisão tomada:** cadastro local por e-mail e senha. **A validar:** necessidade de confirmação de e-mail e recuperação de senha.
 
 ### UC-03 — Gerenciar disciplinas
 
@@ -625,7 +625,7 @@ Os DTOs de requisição e resposta podem ser `record`s Java quando forem apenas 
 - Na primeira versão, o Spring Boot pode servir os arquivos HTML, CSS e JavaScript a partir de `src/main/resources/static`. O navegador usa `fetch()` para chamar a API JSON no mesmo domínio, sob o prefixo `/api/v1`.
 - O front-end não acessa PostgreSQL. Ele envia dados de entrada e apresenta as respostas; regras de permissão e validações importantes permanecem no servidor.
 - Controllers recebem e retornam DTOs. Erros de validação, falta de autenticação, falta de permissão e recursos inacessíveis devem usar respostas HTTP coerentes e um formato JSON uniforme, preparado por um tratador central simples.
-- Para um front-end próprio do navegador servido no mesmo domínio, a proposta inicial é usar uma sessão gerenciada pelo Spring Security em cookie `HttpOnly`, `Secure` em produção e `SameSite`, com proteção CSRF para operações que alteram dados. O método de cadastro e autenticação ainda precisa ser escolhido; se a interface passar a ser servida de outra origem, configurar CORS para essa origem específica e revisar a estratégia de cookies e CSRF.
+- Para o front-end próprio servido no mesmo domínio, a autenticação usa sessão gerenciada pelo Spring Security em cookie `HttpOnly` e `SameSite=Lax`, com `Secure` habilitado por configuração em ambientes HTTPS. Operações de alteração exigem CSRF; se a interface passar a ser servida de outra origem, será necessário configurar CORS para essa origem específica e revisar a estratégia de cookies e CSRF.
 
 ### 12.6 Persistência e migrações
 
@@ -671,6 +671,7 @@ As dependências e seus papéis estão declarados no `pom.xml`. O Spring Boot ge
 | `spring-boot-starter-flyway` e `flyway-database-postgresql` | Migrations Flyway e integração específica com PostgreSQL. |
 | `spring-boot-starter-test` | Suporte a testes, em escopo de teste. |
 | `spring-boot-starter-data-jpa-test` | Suporte focalizado a testes `@DataJpaTest` de repositórios JPA. |
+| `spring-boot-starter-webmvc-test` | Autoconfiguração de MockMvc para testes HTTP da API. |
 
 ### Configuração do banco
 
@@ -681,6 +682,7 @@ As dependências e seus papéis estão declarados no `pom.xml`. O Spring Boot ge
 | `DB_URL` | URL JDBC do banco. | `jdbc:postgresql://localhost:5432/organizacao_academica` |
 | `DB_USERNAME` | Usuário do PostgreSQL. | Obrigatória, sem padrão. |
 | `DB_PASSWORD` | Senha do PostgreSQL. | Obrigatória, sem padrão. |
+| `SESSION_COOKIE_SECURE` | Marca o cookie da sessão como enviado somente por HTTPS. | `false` para desenvolvimento local; definir `true` em produção HTTPS. |
 
 As variáveis do ambiente têm precedência sobre os valores dos arquivos de configuração. Elas devem estar disponíveis no mesmo processo que inicia o Maven e a aplicação. No PowerShell, execute na raiz do projeto:
 
@@ -715,7 +717,7 @@ java -version
 .\mvnw.cmd spring-boot:run
 ```
 
-No macOS/Linux, use `./mvnw --version` e `./mvnw spring-boot:run`. A primeira execução pode baixar dependências do Maven. O Spring Security ainda usa a configuração padrão e protege as requisições; endpoints e autenticação próprios serão implementados em etapas posteriores.
+No macOS/Linux, use `./mvnw --version` e `./mvnw spring-boot:run`. A primeira execução pode baixar dependências do Maven. O cadastro, login e logout JSON estão disponíveis em `/api/v1/auth`; os demais endpoints exigem sessão autenticada. Em produção, configure `SESSION_COOKIE_SECURE=true` quando a aplicação estiver atrás de HTTPS.
 
 Para executar os testes, configure o acesso ao PostgreSQL como acima e rode `.\mvnw.cmd test` no PowerShell ou `./mvnw test` no macOS/Linux. O teste de repositório usa o banco configurado, aplica migrations pendentes via Flyway e faz rollback dos registros de teste.
 
@@ -731,8 +733,66 @@ Use nomes versionados no formato `V<VERSÃO>__<descrição>.sql`, por exemplo `V
 
 A entidade `Usuario` mapeia `id`, `nome`, `email`, `senha_hash` e `criado_em`. A migration `V1__create_usuario.sql` mantém os tamanhos e nulabilidade do modelo, cria o identificador `BIGINT` identity, impede nome/e-mail/hash vazio no PostgreSQL e cria um índice único por `lower(btrim(email))`. A entidade também remove espaços periféricos e normaliza e-mail com `Locale.ROOT` antes de persistir, enquanto o índice protege contra duplicidade mesmo em inserções fora da aplicação.
 
-`Usuario` não implementa `UserDetails` diretamente. Quando a autenticação for implementada, um `UserDetailsService` poderá buscar a conta pelo e-mail normalizado e adaptar `email` como identificador e `senha_hash` como a senha codificada. O serviço de cadastro deverá gerar o hash com um `PasswordEncoder` antes de criar a entidade; a entidade não recebe nem armazena senha em texto puro. Não existe coluna de papel global porque as permissões do produto são definidas por tarefa.
+`Usuario` não implementa `UserDetails` diretamente. `UsuarioDetailsService` busca a conta pelo e-mail normalizado e adapta `email` como identificador e `senha_hash` como senha codificada. O serviço de cadastro gera esse hash antes de persistir; a entidade não recebe nem armazena a senha em texto puro. Não existe coluna de papel global porque as permissões do produto são definidas por tarefa.
 
 A migration assume autenticação local por e-mail e senha, conforme o modelo atual. Se a decisão futura for autenticação exclusivamente por provedor externo, será necessário revisar `senha_hash` e a estratégia de identidade antes de ampliar o esquema.
 
-O repositório `UsuarioRepository` oferece busca de e-mail sem diferenciar maiúsculas e minúsculas para uso futuro no `UserDetailsService`. O serviço de autenticação também deve remover espaços periféricos antes da busca. A API ainda não expõe nem autentica esta entidade.
+O repositório `UsuarioRepository` oferece busca de e-mail sem diferenciar maiúsculas e minúsculas. O serviço de autenticação remove espaços periféricos antes da busca. O fluxo HTTP foi implementado na seção 16.
+
+## 16. Cadastro, autenticação e sessão
+
+A aplicação usa **sessão HTTP mantida pelo servidor**, adequada ao navegador que consumirá a API no mesmo domínio. O navegador guarda apenas o identificador de sessão em cookie `HttpOnly`; não recebe um token de acesso para guardar em `localStorage`. Isso evita introduzir JWT, refresh tokens ou armazenamento adicional. Em produção HTTPS, definir `SESSION_COOKIE_SECURE=true`; `SameSite=Lax` e `HttpOnly` são configurados pela aplicação.
+
+O Spring Security autentica e valida o usuário com `DaoAuthenticationProvider`, `UserDetailsService` e `PasswordEncoder`. As senhas são codificadas pelo `DelegatingPasswordEncoder`, que grava o identificador do codificador junto ao hash (atualmente bcrypt) e facilita uma futura troca do algoritmo. O cadastro exige senha de pelo menos 12 caracteres e limita a senha a 72 bytes UTF-8 para evitar truncamento do bcrypt. A resposta pública nunca inclui o hash. O padrão de codificação segue a estratégia descrita na [documentação do Spring Security](https://docs.spring.io/spring-security/reference/features/authentication/password-storage.html).
+
+| Método e caminho | Acesso | Comportamento |
+| --- | --- | --- |
+| `GET /api/v1/auth/csrf` | Público | Cria/devolve o token CSRF associado à sessão. |
+| `POST /api/v1/auth/register` | Público + CSRF | Cria a conta e responde `201`; não inicia sessão automaticamente. |
+| `POST /api/v1/auth/login` | Público + CSRF | Valida e-mail/senha, rotaciona o identificador da sessão e responde com os dados públicos da conta. |
+| `GET /api/v1/auth/me` | Sessão autenticada | Retorna os dados públicos da conta atual e permite restaurar o estado da interface após recarregar a página. |
+| `POST /api/v1/auth/logout` | Sessão + CSRF | Invalida a sessão e responde `204`. |
+
+Antes de enviar cadastro, login ou logout, o navegador chama `GET /api/v1/auth/csrf` e envia o campo `token` da resposta no header indicado por `headerName` (por padrão, `X-CSRF-TOKEN`). Após login e logout, o Spring Security invalida o token CSRF anterior; o cliente deve consultar `/csrf` novamente antes de outra operação POST. Esse mecanismo mantém a proteção CSRF habilitada para endpoints que usam cookies de sessão, incluindo autenticação e saída, conforme a [documentação oficial](https://docs.spring.io/spring-security/reference/servlet/exploits/csrf.html).
+
+Exemplo mínimo no navegador:
+
+```javascript
+let csrf = await fetch("/api/v1/auth/csrf").then((response) => response.json());
+
+await fetch("/api/v1/auth/register", {
+  method: "POST",
+  credentials: "same-origin",
+  headers: {
+    "Content-Type": "application/json",
+    [csrf.headerName]: csrf.token,
+  },
+  body: JSON.stringify({ nome: "Ana", email: "ana@example.edu", senha: "uma-senha-forte" }),
+});
+
+csrf = await fetch("/api/v1/auth/csrf").then((response) => response.json());
+await fetch("/api/v1/auth/login", {
+  method: "POST",
+  credentials: "same-origin",
+  headers: {
+    "Content-Type": "application/json",
+    [csrf.headerName]: csrf.token,
+  },
+  body: JSON.stringify({ email: "ana@example.edu", senha: "uma-senha-forte" }),
+});
+
+csrf = await fetch("/api/v1/auth/csrf").then((response) => response.json());
+await fetch("/api/v1/auth/logout", {
+  method: "POST",
+  credentials: "same-origin",
+  headers: { [csrf.headerName]: csrf.token },
+});
+```
+
+O navegador conserva o cookie de sessão entre essas chamadas. O token CSRF é enviado no header, não armazenado como token de autenticação.
+
+Erros seguem o formato JSON `{ "timestamp", "status", "code", "message", "path" }`. Credenciais incorretas e e-mail inexistente produzem a mesma resposta `401 INVALID_CREDENTIALS`; requisição sem autenticação recebe `401 UNAUTHENTICATED`, CSRF ou ação negada recebe `403 ACCESS_DENIED`, e e-mail já cadastrado recebe `409 EMAIL_ALREADY_REGISTERED`. A validação de campos retorna `400 VALIDATION_ERROR` sem expor valores recebidos.
+
+O cadastro não autentica automaticamente a nova conta; a interface deve fazer login após receber sucesso. A proteção de autorização por tarefa continua pertencendo aos serviços de domínio e será aplicada quando esses endpoints forem implementados. A sessão usa o armazenamento HTTP padrão do contêiner; ainda não há armazenamento de sessão compartilhado entre várias instâncias, limitação de tentativas de senha, confirmação de e-mail, recuperação de senha ou autenticação multifator.
+
+Os testes de integração usam MockMvc e PostgreSQL configurado para verificar cadastro, hash de senha, login, rotação de sessão, consulta da sessão, logout, CSRF, validação, duplicidade e respostas para credenciais inválidas. Execute-os com `./mvnw test` ou `.\mvnw.cmd test`, depois de configurar as variáveis de banco descritas na seção 14.
