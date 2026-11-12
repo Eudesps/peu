@@ -13,4 +13,9 @@ public record CadastroUsuarioRequest(
 		nome = nome == null ? null : nome.trim();
 		email = email == null ? null : email.trim();
 	}
+
+	@Override
+	public String toString() {
+		return "CadastroUsuarioRequest[conteudo=[REDACTED]]";
+	}
 }

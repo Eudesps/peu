@@ -534,7 +534,7 @@ Chaves estrangeiras, `UNIQUE` e `CHECK` cobrem referências básicas, duplicidad
 - **Exclusão:** excluir tarefa pode usar `ON DELETE CASCADE` para participantes, convites e subtarefas, conforme as regras do produto. Remover uma disciplina referenciada fica bloqueado por `RESTRICT` até as tarefas serem desassociadas. A exclusão de usuário fica restrita enquanto houver dados relacionados, pois o comportamento de encerramento de conta ainda não foi definido.
 - **E-mail:** unicidade comum diferencia maiúsculas de minúsculas em PostgreSQL. Normalização no cadastro mais índice único funcional evita contas duplicadas por diferenças de caixa ou espaços.
 
-As principais decisões a validar antes de criar migrations são: login local ou provedor externo; prazo apenas por data ou com horário; se uma disciplina é identificada também por período; e o comportamento de encerramento de conta. A modelagem acima não gera migrations nem define endpoints.
+O login local por e-mail e senha já foi escolhido. As migrations V1 e V2 implementam somente `usuario` e `disciplina`; as tabelas de tarefas e colaboração ainda não foram criadas. Antes de implementar tarefas, ainda é preciso validar prazo por data ou horário, identificação de disciplina por período e comportamento de encerramento de conta.
 
 ## 12. Arquitetura inicial
 
@@ -644,7 +644,7 @@ Hibernate está configurado com `ddl-auto=none`; a entidade `Usuario` e sua migr
 
 - Testes unitários de services cobrem regras de autorização e negócio, usando JUnit Jupiter 6 e Mockito. O Spring Framework 7 requer JUnit Jupiter 6 para a integração TestContext; essa versão foi escolhida para permanecer no Spring Boot 4. [Referência oficial do Spring Framework](https://docs.spring.io/spring-framework/reference/testing/testcontext-framework/support-classes.html).
 - Testes de controller verificam rotas, validação de DTOs, autenticação e respostas HTTP.
-- Testes de integração de repositories e migrations usam PostgreSQL de teste para conferir constraints e consultas. O teste atual de `UsuarioRepository` usa o PostgreSQL configurado e reverte os dados de cada teste ao final.
+- Testes de integração de repositories, migrations e endpoints usam o PostgreSQL configurado para conferir constraints, consultas e isolamento entre contas. Os testes atuais revertem os registros criados ao final de cada teste.
 - Os testes ficam sob `src/test/java` espelhando os pacotes dos domínios. Testes não substituem a verificação de autorização no código de produção.
 
 ## 13. Próximo passo recomendado
@@ -727,7 +727,7 @@ Flyway está habilitado em `application.properties` e procura migrations SQL em 
 
 Use nomes versionados no formato `V<VERSÃO>__<descrição>.sql`, por exemplo `V1__create_initial_schema.sql` e depois `V2__add_task_index.sql`. Uma migration versionada aplicada não deve ser editada; mudanças posteriores devem entrar em um novo arquivo e nova versão. Flyway registra as versões e seus checksums em `flyway_schema_history`. [Referência oficial de migrations versionadas](https://documentation.red-gate.com/fd/versioned-migrations-273973333.html).
 
-`V1__create_usuario.sql` cria somente a tabela `usuario`. Ao iniciar a aplicação, Flyway registra e aplica essa versão se ainda não estiver no histórico. Ainda não há migrations para disciplina, tarefa, participantes, convites ou subtarefas; essas tabelas dependem das decisões pendentes do modelo da seção 11.4. Hibernate permanece com `ddl-auto=none` para não competir com Flyway na criação do esquema. Spring Boot recomenda usar um único mecanismo de inicialização do esquema. [Documentação de inicialização de banco](https://docs.spring.io/spring-boot/how-to/data-initialization.html).
+`V1__create_usuario.sql` cria `usuario`; `V2__create_disciplina.sql` cria `disciplina` e sua FK para `usuario`. Flyway aplica versões pendentes na inicialização. Ainda não há migrations para tarefa, participantes, convites ou subtarefas; essas tabelas dependem das decisões pendentes da seção 11.4. Hibernate permanece com `ddl-auto=none` para não competir com Flyway na criação do esquema. Spring Boot recomenda usar um único mecanismo de inicialização do esquema. [Documentação de inicialização de banco](https://docs.spring.io/spring-boot/how-to/data-initialization.html).
 
 ## 15. Implementação inicial de Usuario
 
@@ -796,3 +796,19 @@ Erros seguem o formato JSON `{ "timestamp", "status", "code", "message", "path" 
 O cadastro não autentica automaticamente a nova conta; a interface deve fazer login após receber sucesso. A proteção de autorização por tarefa continua pertencendo aos serviços de domínio e será aplicada quando esses endpoints forem implementados. A sessão usa o armazenamento HTTP padrão do contêiner; ainda não há armazenamento de sessão compartilhado entre várias instâncias, limitação de tentativas de senha, confirmação de e-mail, recuperação de senha ou autenticação multifator.
 
 Os testes de integração usam MockMvc e PostgreSQL configurado para verificar cadastro, hash de senha, login, rotação de sessão, consulta da sessão, logout, CSRF, validação, duplicidade e respostas para credenciais inválidas. Execute-os com `./mvnw test` ou `.\mvnw.cmd test`, depois de configurar as variáveis de banco descritas na seção 14.
+
+## 17. Implementação de disciplinas
+
+A tabela `disciplina`, criada pela migration V2, contém `id`, `usuario_id`, `nome` e `criada_em`. O campo `usuario_id` é obrigatório e referencia `usuario.id` com `ON DELETE RESTRICT`. O índice por `usuario_id` ajuda a carregar a lista própria; a chave candidata `(id, usuario_id)` fica disponível para a futura FK composta de `tarefa`. Nomes podem se repetir, são aparados nas extremidades e precisam conter até 120 caracteres não vazios.
+
+| Método e caminho | Comportamento |
+| --- | --- |
+| `GET /api/v1/disciplinas` | Lista somente as disciplinas da sessão atual, ordenadas pelo nome. |
+| `POST /api/v1/disciplinas` | Cria uma disciplina da pessoa autenticada; o corpo contém apenas `nome`. |
+| `GET /api/v1/disciplinas/{id}` | Consulta uma disciplina própria. |
+| `PUT /api/v1/disciplinas/{id}` | Atualiza o nome de uma disciplina própria. |
+| `DELETE /api/v1/disciplinas/{id}` | Remove uma disciplina própria que não esteja associada a tarefas. |
+
+O controlador usa o e-mail da sessão autenticada para localizar o usuário. O serviço consulta ou altera disciplina sempre com os dois critérios, `id` e `usuario_id`; portanto, o corpo não pode escolher proprietário. Para não revelar se um ID pertence a outra conta, consulta, edição e exclusão retornam `404 DISCIPLINA_NOT_FOUND` tanto para ID inexistente quanto para ID alheio. Lista vazia é `200`. Se uma futura tarefa ainda referenciar a disciplina, a FK `RESTRICT` bloqueia a exclusão e a API responde `409 DISCIPLINA_IN_USE`; primeiro será necessário desassociar as tarefas.
+
+`DisciplinaController` traduz HTTP, `DisciplinaService` aplica o escopo do proprietário e as transações, `DisciplinaRepository` filtra as consultas pelo usuário e `Disciplina` mapeia o relacionamento obrigatório. Os testes `DisciplinaFlowIntegrationTests` autentica duas contas e verificam CRUD do proprietário, lista/consulta de outra conta e tentativas de edição/exclusão entre contas.

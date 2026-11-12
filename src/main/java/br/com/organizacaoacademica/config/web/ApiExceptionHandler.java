@@ -1,5 +1,7 @@
 package br.com.organizacaoacademica.config.web;
 
+import br.com.organizacaoacademica.disciplina.service.DisciplinaEmUsoException;
+import br.com.organizacaoacademica.disciplina.service.DisciplinaNaoEncontradaException;
 import br.com.organizacaoacademica.usuario.service.CredenciaisInvalidasException;
 import br.com.organizacaoacademica.usuario.service.EmailJaCadastradoException;
 import br.com.organizacaoacademica.usuario.service.SenhaForaDaPoliticaException;
@@ -14,6 +16,22 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 /** Converte erros conhecidos de entrada e autenticação para respostas estáveis da API. */
 @RestControllerAdvice
 public class ApiExceptionHandler {
+
+	@ExceptionHandler(DisciplinaNaoEncontradaException.class)
+	public ResponseEntity<ApiErrorResponse> disciplinaNaoEncontrada(
+			DisciplinaNaoEncontradaException exception,
+			HttpServletRequest request
+	) {
+		return erro(HttpStatus.NOT_FOUND, "DISCIPLINA_NOT_FOUND", exception.getMessage(), request);
+	}
+
+	@ExceptionHandler(DisciplinaEmUsoException.class)
+	public ResponseEntity<ApiErrorResponse> disciplinaEmUso(
+			DisciplinaEmUsoException exception,
+			HttpServletRequest request
+	) {
+		return erro(HttpStatus.CONFLICT, "DISCIPLINA_IN_USE", exception.getMessage(), request);
+	}
 
 	@ExceptionHandler(CredenciaisInvalidasException.class)
 	public ResponseEntity<ApiErrorResponse> credenciaisInvalidas(
