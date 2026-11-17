@@ -1,6 +1,9 @@
 package br.com.organizacaoacademica.disciplina.controller;
 
 import br.com.organizacaoacademica.disciplina.dto.DisciplinaRequest;
+import br.com.organizacaoacademica.tarefa.dto.TarefaCriarRequest;
+import br.com.organizacaoacademica.tarefa.entity.PrioridadeTarefa;
+import br.com.organizacaoacademica.tarefa.entity.TipoTarefa;
 import br.com.organizacaoacademica.usuario.dto.CadastroUsuarioRequest;
 import br.com.organizacaoacademica.usuario.dto.LoginRequest;
 import org.junit.jupiter.api.Test;
@@ -11,10 +14,12 @@ import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.time.LocalDate;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -122,6 +127,96 @@ class DisciplinaFlowIntegrationTests {
 				.andExpect(jsonPath("$.nome").value("História"));
 	}
 
+	@Test
+	void rejeitaNomeDeDisciplinaVazioOuLongoNaCriacaoEEEdicao() throws Exception {
+		SessaoUsuario usuario = criarUsuarioAutenticado();
+		long id = criarDisciplina(usuario, "Nome preservado").get("id").asLong();
+		Csrf csrf = obterCsrf(usuario.sessao());
+
+		mockMvc.perform(post("/api/v1/disciplinas")
+					.session(csrf.sessao()).header(csrf.header(), csrf.token())
+					.contentType(MediaType.APPLICATION_JSON)
+					.content(jsonMapper.writeValueAsString(new DisciplinaRequest("   "))))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+		mockMvc.perform(post("/api/v1/disciplinas")
+					.session(csrf.sessao()).header(csrf.header(), csrf.token())
+					.contentType(MediaType.APPLICATION_JSON)
+					.content(jsonMapper.writeValueAsString(new DisciplinaRequest("D".repeat(121)))))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+		mockMvc.perform(put("/api/v1/disciplinas/{id}", id)
+					.session(csrf.sessao()).header(csrf.header(), csrf.token())
+					.contentType(MediaType.APPLICATION_JSON)
+					.content(jsonMapper.writeValueAsString(new DisciplinaRequest("   "))))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+		mockMvc.perform(put("/api/v1/disciplinas/{id}", id)
+					.session(csrf.sessao()).header(csrf.header(), csrf.token())
+					.contentType(MediaType.APPLICATION_JSON)
+					.content(jsonMapper.writeValueAsString(new DisciplinaRequest("D".repeat(121)))))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
+		mockMvc.perform(get("/api/v1/disciplinas/{id}", id).session(usuario.sessao()))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.nome").value("Nome preservado"));
+	}
+
+	@Test
+	@Transactional(propagation = Propagation.NOT_SUPPORTED)
+	void naoPermiteExcluirDisciplinaAssociadaATarefa() throws Exception {
+		SessaoUsuario usuario = criarUsuarioAutenticado();
+		long disciplinaId = criarDisciplina(usuario, "Associada a tarefa").get("id").asLong();
+		criarTarefa(usuario, disciplinaId);
+		Csrf csrf = obterCsrf(usuario.sessao());
+
+		mockMvc.perform(delete("/api/v1/disciplinas/{id}", disciplinaId)
+					.session(csrf.sessao()).header(csrf.header(), csrf.token()))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.code").value("DISCIPLINA_IN_USE"));
+	}
+
+	@Test
+	void endpointsDeDisciplinaExigemAutenticacaoECsrfNasMutacoes() throws Exception {
+		Csrf csrfVisitante = obterCsrf(null);
+		mockMvc.perform(get("/api/v1/disciplinas").session(csrfVisitante.sessao()))
+				.andExpect(status().isUnauthorized());
+		mockMvc.perform(get("/api/v1/disciplinas/{id}", 1L).session(csrfVisitante.sessao()))
+				.andExpect(status().isUnauthorized());
+		mockMvc.perform(post("/api/v1/disciplinas")
+					.session(csrfVisitante.sessao()).header(csrfVisitante.header(), csrfVisitante.token())
+					.contentType(MediaType.APPLICATION_JSON)
+					.content(jsonMapper.writeValueAsString(new DisciplinaRequest("Sem sessao"))))
+				.andExpect(status().isUnauthorized());
+		mockMvc.perform(put("/api/v1/disciplinas/{id}", 1L)
+					.session(csrfVisitante.sessao()).header(csrfVisitante.header(), csrfVisitante.token())
+					.contentType(MediaType.APPLICATION_JSON)
+					.content(jsonMapper.writeValueAsString(new DisciplinaRequest("Sem sessao"))))
+				.andExpect(status().isUnauthorized());
+		mockMvc.perform(delete("/api/v1/disciplinas/{id}", 1L)
+					.session(csrfVisitante.sessao()).header(csrfVisitante.header(), csrfVisitante.token()))
+				.andExpect(status().isUnauthorized());
+
+		SessaoUsuario usuario = criarUsuarioAutenticado();
+		long id = criarDisciplina(usuario, "Protegida por CSRF").get("id").asLong();
+		mockMvc.perform(post("/api/v1/disciplinas")
+					.session(usuario.sessao())
+					.contentType(MediaType.APPLICATION_JSON)
+					.content(jsonMapper.writeValueAsString(new DisciplinaRequest("Sem token"))))
+				.andExpect(status().isForbidden());
+		mockMvc.perform(put("/api/v1/disciplinas/{id}", id)
+					.session(usuario.sessao())
+					.contentType(MediaType.APPLICATION_JSON)
+					.content(jsonMapper.writeValueAsString(new DisciplinaRequest("Sem token"))))
+				.andExpect(status().isForbidden());
+		mockMvc.perform(delete("/api/v1/disciplinas/{id}", id).session(usuario.sessao()))
+				.andExpect(status().isForbidden());
+		mockMvc.perform(get("/api/v1/disciplinas/{id}", id).session(usuario.sessao()))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.nome").value("Protegida por CSRF"));
+	}
+
 	private JsonNode criarDisciplina(SessaoUsuario usuario, String nome) throws Exception {
 		Csrf csrf = obterCsrf(usuario.sessao());
 		MvcResult result = mockMvc.perform(post("/api/v1/disciplinas")
@@ -132,6 +227,18 @@ class DisciplinaFlowIntegrationTests {
 				.andExpect(status().isCreated())
 				.andReturn();
 		return jsonMapper.readTree(result.getResponse().getContentAsString());
+	}
+
+	private void criarTarefa(SessaoUsuario usuario, long disciplinaId) throws Exception {
+		Csrf csrf = obterCsrf(usuario.sessao());
+		mockMvc.perform(post("/api/v1/tarefas")
+					.session(csrf.sessao())
+					.header(csrf.header(), csrf.token())
+					.contentType(MediaType.APPLICATION_JSON)
+					.content(jsonMapper.writeValueAsString(new TarefaCriarRequest(
+							TipoTarefa.INDIVIDUAL, "Tarefa ligada", null, disciplinaId,
+							LocalDate.of(2026, 12, 10), PrioridadeTarefa.MEDIA))))
+				.andExpect(status().isCreated());
 	}
 
 	private SessaoUsuario criarUsuarioAutenticado() throws Exception {

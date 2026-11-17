@@ -174,6 +174,38 @@ class AuthFlowIntegrationTests {
 	}
 
 	@Test
+	void rejeitaCadastroComNomeEmailOuSenhaInvalidos() throws Exception {
+		Csrf csrf = obterCsrf();
+		String emailNomeVazio = emailUnico();
+		String emailSenhaCurta = emailUnico();
+
+		mockMvc.perform(post("/api/v1/auth/register")
+					.session(csrf.session()).header(csrf.header(), csrf.token())
+					.contentType(MediaType.APPLICATION_JSON)
+					.content(jsonMapper.writeValueAsString(new CadastroUsuarioRequest(
+							"   ", emailNomeVazio, "senha-forte-para-teste"))))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+		mockMvc.perform(post("/api/v1/auth/register")
+					.session(csrf.session()).header(csrf.header(), csrf.token())
+					.contentType(MediaType.APPLICATION_JSON)
+					.content(jsonMapper.writeValueAsString(new CadastroUsuarioRequest(
+							"Estudante", "email-invalido", "senha-forte-para-teste"))))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+		mockMvc.perform(post("/api/v1/auth/register")
+					.session(csrf.session()).header(csrf.header(), csrf.token())
+					.contentType(MediaType.APPLICATION_JSON)
+					.content(jsonMapper.writeValueAsString(new CadastroUsuarioRequest(
+							"Estudante", emailSenhaCurta, "curta"))))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("INVALID_PASSWORD"));
+
+		assertThat(usuarioRepository.findByEmailIgnoreCase(emailNomeVazio)).isEmpty();
+		assertThat(usuarioRepository.findByEmailIgnoreCase(emailSenhaCurta)).isEmpty();
+	}
+
+	@Test
 	void protegeDadosDeSessaoParaVisitante() throws Exception {
 		mockMvc.perform(get("/api/v1/auth/me"))
 				.andExpect(status().isUnauthorized())

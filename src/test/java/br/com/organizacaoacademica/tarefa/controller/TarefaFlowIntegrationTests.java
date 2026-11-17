@@ -7,6 +7,7 @@ import br.com.organizacaoacademica.tarefa.dto.TarefaEstadoRequest;
 import br.com.organizacaoacademica.tarefa.entity.EstadoTarefa;
 import br.com.organizacaoacademica.tarefa.entity.PrioridadeTarefa;
 import br.com.organizacaoacademica.tarefa.entity.TipoTarefa;
+import br.com.organizacaoacademica.tarefa.repository.TarefaRepository;
 import br.com.organizacaoacademica.usuario.dto.CadastroUsuarioRequest;
 import br.com.organizacaoacademica.usuario.dto.LoginRequest;
 import org.junit.jupiter.api.Test;
@@ -46,6 +47,9 @@ class TarefaFlowIntegrationTests {
 
 	@Autowired
 	private JsonMapper jsonMapper;
+
+	@Autowired
+	private TarefaRepository tarefaRepository;
 
 	@Test
 	void usuarioCriaTarefaComDisciplinaEValoresPadrao() throws Exception {
@@ -90,6 +94,7 @@ class TarefaFlowIntegrationTests {
 		SessaoUsuario outraPessoa = criarUsuarioAutenticado();
 		long disciplinaFiltrada = criarDisciplina(proprietario, "Zoologia");
 		long outraDisciplina = criarDisciplina(proprietario, "Álgebra");
+		long disciplinaAlheia = criarDisciplina(outraPessoa, "Disciplina privada");
 
 		long tarefaEsperada = criarTarefa(proprietario, new TarefaCriarRequest(
 				TipoTarefa.INDIVIDUAL, "Prova", null, disciplinaFiltrada,
@@ -153,6 +158,12 @@ class TarefaFlowIntegrationTests {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$", hasSize(1)))
 				.andExpect(jsonPath("$[0].titulo").value("Tarefa de outra pessoa"));
+
+		mockMvc.perform(get("/api/v1/tarefas")
+					.session(proprietario.sessao())
+					.param("disciplinaId", String.valueOf(disciplinaAlheia)))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$", hasSize(0)));
 	}
 
 	@Test
@@ -228,6 +239,10 @@ class TarefaFlowIntegrationTests {
 					.contentType(MediaType.APPLICATION_JSON)
 					.content(jsonMapper.writeValueAsString(new TarefaEstadoRequest(EstadoTarefa.CONCLUIDA))))
 				.andExpect(status().isNotFound());
+		mockMvc.perform(get("/api/v1/tarefas/{id}", tarefaId).session(proprietario.sessao()))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.titulo").value("Tarefa protegida"))
+				.andExpect(jsonPath("$.estado").value("ABERTA"));
 
 		alterarEstado(proprietario, tarefaId, EstadoTarefa.CONCLUIDA);
 		Csrf csrfProprietario = obterCsrf(proprietario.sessao());
@@ -382,8 +397,174 @@ class TarefaFlowIntegrationTests {
 
 	@Test
 	void endpointsDeTarefasExigemAutenticacao() throws Exception {
-		mockMvc.perform(get("/api/v1/tarefas"))
+		Csrf csrf = obterCsrf(null);
+		mockMvc.perform(get("/api/v1/tarefas").session(csrf.sessao()))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
+		mockMvc.perform(get("/api/v1/tarefas/{id}", 1L).session(csrf.sessao()))
 				.andExpect(status().isUnauthorized());
+
+		mockMvc.perform(post("/api/v1/tarefas")
+					.session(csrf.sessao())
+					.header(csrf.header(), csrf.token())
+					.contentType(MediaType.APPLICATION_JSON)
+					.content(jsonMapper.writeValueAsString(tarefaBasica("Sem sessão"))))
+				.andExpect(status().isUnauthorized());
+		mockMvc.perform(put("/api/v1/tarefas/{id}", 1L)
+					.session(csrf.sessao())
+					.header(csrf.header(), csrf.token())
+					.contentType(MediaType.APPLICATION_JSON)
+					.content(jsonMapper.writeValueAsString(new TarefaAtualizarRequest(
+							"Sem sessão", null, null, LocalDate.of(2026, 12, 10), PrioridadeTarefa.MEDIA))))
+				.andExpect(status().isUnauthorized());
+		mockMvc.perform(patch("/api/v1/tarefas/{id}/estado", 1L)
+					.session(csrf.sessao())
+					.header(csrf.header(), csrf.token())
+					.contentType(MediaType.APPLICATION_JSON)
+					.content(jsonMapper.writeValueAsString(new TarefaEstadoRequest(EstadoTarefa.CONCLUIDA))))
+				.andExpect(status().isUnauthorized());
+		mockMvc.perform(delete("/api/v1/tarefas/{id}", 1L)
+					.session(csrf.sessao())
+					.header(csrf.header(), csrf.token()))
+				.andExpect(status().isUnauthorized());
+	}
+
+	@Test
+	void exigeCsrfEmTodasAsMutacoesDeTarefa() throws Exception {
+		SessaoUsuario usuario = criarUsuarioAutenticado();
+		long tarefaId = criarTarefa(usuario, tarefaBasica("Protegida contra CSRF"));
+
+		mockMvc.perform(post("/api/v1/tarefas")
+					.session(usuario.sessao())
+					.contentType(MediaType.APPLICATION_JSON)
+					.content(jsonMapper.writeValueAsString(tarefaBasica("Sem token"))))
+				.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+		mockMvc.perform(put("/api/v1/tarefas/{id}", tarefaId)
+					.session(usuario.sessao())
+					.contentType(MediaType.APPLICATION_JSON)
+					.content(jsonMapper.writeValueAsString(new TarefaAtualizarRequest(
+							"Sem token", null, null, LocalDate.of(2026, 12, 11), PrioridadeTarefa.ALTA))))
+				.andExpect(status().isForbidden());
+		mockMvc.perform(patch("/api/v1/tarefas/{id}/estado", tarefaId)
+					.session(usuario.sessao())
+					.contentType(MediaType.APPLICATION_JSON)
+					.content(jsonMapper.writeValueAsString(new TarefaEstadoRequest(EstadoTarefa.CONCLUIDA))))
+				.andExpect(status().isForbidden());
+		mockMvc.perform(delete("/api/v1/tarefas/{id}", tarefaId)
+					.session(usuario.sessao()))
+				.andExpect(status().isForbidden());
+
+		mockMvc.perform(get("/api/v1/tarefas/{id}", tarefaId).session(usuario.sessao()))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.titulo").value("Protegida contra CSRF"))
+				.andExpect(jsonPath("$.estado").value("ABERTA"));
+	}
+
+	@Test
+	void identificadorDeCriadorEnviadoNoJsonNaoTransferePropriedade() throws Exception {
+		SessaoUsuario proprietarioDaSessao = criarUsuarioAutenticado();
+		SessaoUsuario pessoaForjada = criarUsuarioAutenticado();
+		MvcResult perfilForjado = mockMvc.perform(get("/api/v1/auth/me").session(pessoaForjada.sessao()))
+				.andExpect(status().isOk())
+				.andReturn();
+		long idPessoaForjada = jsonMapper.readTree(perfilForjado.getResponse().getContentAsString())
+				.get("id").asLong();
+		String body = "{\"tipo\":\"INDIVIDUAL\",\"titulo\":\"Proprietário da sessão\","
+				+ "\"prazo\":\"2026-12-10\",\"criadorId\":" + idPessoaForjada + "}";
+		Csrf csrf = obterCsrf(proprietarioDaSessao.sessao());
+		MvcResult result = mockMvc.perform(post("/api/v1/tarefas")
+					.session(csrf.sessao())
+					.header(csrf.header(), csrf.token())
+					.contentType(MediaType.APPLICATION_JSON)
+					.content(body))
+				.andExpect(status().isCreated())
+				.andReturn();
+		long tarefaId = jsonMapper.readTree(result.getResponse().getContentAsString()).get("id").asLong();
+		long idProprietario = jsonMapper.readTree(mockMvc.perform(
+					get("/api/v1/auth/me").session(proprietarioDaSessao.sessao()))
+				.andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).get("id").asLong();
+
+		assertThat(tarefaRepository.findById(tarefaId).orElseThrow().getCriador().getId())
+				.isEqualTo(idProprietario)
+				.isNotEqualTo(idPessoaForjada);
+		mockMvc.perform(get("/api/v1/tarefas/{id}", tarefaId).session(pessoaForjada.sessao()))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.code").value("TAREFA_NOT_FOUND"));
+	}
+
+	@Test
+	void idsInexistentesRecebemMesmo404EmLeituraEdicaoEstadoEExclusao() throws Exception {
+		SessaoUsuario usuario = criarUsuarioAutenticado();
+		long idInexistente = Long.MAX_VALUE;
+		Csrf csrf = obterCsrf(usuario.sessao());
+
+		mockMvc.perform(get("/api/v1/tarefas/{id}", idInexistente).session(usuario.sessao()))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.code").value("TAREFA_NOT_FOUND"));
+		mockMvc.perform(put("/api/v1/tarefas/{id}", idInexistente)
+					.session(csrf.sessao()).header(csrf.header(), csrf.token())
+					.contentType(MediaType.APPLICATION_JSON)
+					.content(jsonMapper.writeValueAsString(new TarefaAtualizarRequest(
+							"Tarefa", null, null, LocalDate.of(2026, 12, 10), PrioridadeTarefa.MEDIA))))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.code").value("TAREFA_NOT_FOUND"));
+		mockMvc.perform(patch("/api/v1/tarefas/{id}/estado", idInexistente)
+					.session(csrf.sessao()).header(csrf.header(), csrf.token())
+					.contentType(MediaType.APPLICATION_JSON)
+					.content(jsonMapper.writeValueAsString(new TarefaEstadoRequest(EstadoTarefa.CONCLUIDA))))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.code").value("TAREFA_NOT_FOUND"));
+		mockMvc.perform(delete("/api/v1/tarefas/{id}", idInexistente)
+					.session(csrf.sessao()).header(csrf.header(), csrf.token()))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.code").value("TAREFA_NOT_FOUND"));
+	}
+
+	@Test
+	void rejeitaOrdenacaoEParametrosDeDataInvalidos() throws Exception {
+		SessaoUsuario usuario = criarUsuarioAutenticado();
+
+		mockMvc.perform(get("/api/v1/tarefas").session(usuario.sessao()).param("ordenarPor", "DESCONHECIDO"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("INVALID_QUERY_PARAMETER"));
+		mockMvc.perform(get("/api/v1/tarefas").session(usuario.sessao()).param("direcao", "LATERAL"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("INVALID_QUERY_PARAMETER"));
+		mockMvc.perform(get("/api/v1/tarefas").session(usuario.sessao()).param("prazoInicio", "ontem"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("INVALID_QUERY_PARAMETER"));
+		mockMvc.perform(get("/api/v1/tarefas").session(usuario.sessao()).param("disciplinaId", "abc"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("INVALID_QUERY_PARAMETER"));
+	}
+
+	@Test
+	void rejeitaTituloAcimaDoLimiteNaCriacaoEEdicaoSemAlterarRegistro() throws Exception {
+		SessaoUsuario usuario = criarUsuarioAutenticado();
+		long tarefaId = criarTarefa(usuario, tarefaBasica("Título original"));
+		Csrf csrf = obterCsrf(usuario.sessao());
+		String tituloLongo = "T".repeat(161);
+
+		mockMvc.perform(post("/api/v1/tarefas")
+					.session(csrf.sessao()).header(csrf.header(), csrf.token())
+					.contentType(MediaType.APPLICATION_JSON)
+					.content(jsonMapper.writeValueAsString(new TarefaCriarRequest(
+							TipoTarefa.INDIVIDUAL, tituloLongo, null, null,
+							LocalDate.of(2026, 12, 10), PrioridadeTarefa.MEDIA))))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+		mockMvc.perform(put("/api/v1/tarefas/{id}", tarefaId)
+					.session(csrf.sessao()).header(csrf.header(), csrf.token())
+					.contentType(MediaType.APPLICATION_JSON)
+					.content(jsonMapper.writeValueAsString(new TarefaAtualizarRequest(
+							tituloLongo, null, null, LocalDate.of(2026, 12, 10), PrioridadeTarefa.MEDIA))))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
+		mockMvc.perform(get("/api/v1/tarefas/{id}", tarefaId).session(usuario.sessao()))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.titulo").value("Título original"));
 	}
 
 	private long criarDisciplina(SessaoUsuario usuario, String nome) throws Exception {
