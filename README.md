@@ -650,7 +650,7 @@ Hibernate está configurado com `ddl-auto=none`; `Usuario`, `Disciplina` e `Tare
 
 ## 13. Próximo passo recomendado
 
-Validar com estudantes o prazo por data ou horário e os níveis de prioridade escolhidos. Depois, implementar as operações de tarefa com autorização pelo criador; participantes, convites e subtarefas ficam para etapas próprias, após validar o fluxo de colaboração.
+Validar com estudantes o prazo por data ou horário e os níveis de prioridade escolhidos. O CRUD de tarefas próprias já está disponível; participantes, convites e subtarefas ficam para etapas próprias, após validar o fluxo de colaboração.
 
 ## 14. Instalação, configuração e execução
 
@@ -794,7 +794,7 @@ O navegador conserva o cookie de sessão entre essas chamadas. O token CSRF é e
 
 Erros seguem o formato JSON `{ "timestamp", "status", "code", "message", "path" }`. Credenciais incorretas e e-mail inexistente produzem a mesma resposta `401 INVALID_CREDENTIALS`; requisição sem autenticação recebe `401 UNAUTHENTICATED`, CSRF ou ação negada recebe `403 ACCESS_DENIED`, e e-mail já cadastrado recebe `409 EMAIL_ALREADY_REGISTERED`. A validação de campos retorna `400 VALIDATION_ERROR` sem expor valores recebidos.
 
-O cadastro não autentica automaticamente a nova conta; a interface deve fazer login após receber sucesso. A proteção de autorização por tarefa continua pertencendo aos serviços de domínio e será aplicada quando esses endpoints forem implementados. A sessão usa o armazenamento HTTP padrão do contêiner; ainda não há armazenamento de sessão compartilhado entre várias instâncias, limitação de tentativas de senha, confirmação de e-mail, recuperação de senha ou autenticação multifator.
+O cadastro não autentica automaticamente a nova conta; a interface deve fazer login após receber sucesso. Os endpoints de tarefas verificam a propriedade no `TarefaService`; a autorização de participantes e subtarefas será definida quando esses recursos forem implementados. A sessão usa o armazenamento HTTP padrão do contêiner; ainda não há armazenamento de sessão compartilhado entre várias instâncias, limitação de tentativas de senha, confirmação de e-mail, recuperação de senha ou autenticação multifator.
 
 Os testes de integração usam MockMvc e PostgreSQL configurado para verificar cadastro, hash de senha, login, rotação de sessão, consulta da sessão, logout, CSRF, validação, duplicidade e respostas para credenciais inválidas. Execute-os com `./mvnw test` ou `.\mvnw.cmd test`, depois de configurar as variáveis de banco descritas na seção 14.
 
@@ -820,6 +820,19 @@ A migration `V3__create_tarefa.sql` implementa os campos `id`, criador, discipli
 
 O criador é obrigatório e imutável na entidade; o tipo também não tem operação de alteração. A FK composta `(disciplina_id, criador_id)` referencia `(disciplina.id, disciplina.usuario_id)`, garantindo no próprio banco que uma disciplina associada pertence ao criador. Título em branco e valores fora dos enums são rejeitados por constraints SQL, e os campos de aplicação têm validações compatíveis. Há índices para listar tarefas do criador por prazo e localizar as tarefas de uma disciplina.
 
-Os níveis `BAIXA`, `MEDIA` e `ALTA` e o padrão `MEDIA` foram definidos nesta implementação porque a modelagem aprovada não especificou prioridade; precisam ser validados com estudantes. Tipo `COMPARTILHADA` apenas distingue a intenção do registro nesta etapa: não há participantes, convites, subtarefas, acesso de terceiros ou endpoints de tarefas. O repositório fornece consultas filtradas pelo criador para servir de base ao futuro serviço de autorização, mas as operações HTTP e as regras de colaboração não foram implementadas.
+Os níveis `BAIXA`, `MEDIA` e `ALTA` e o padrão `MEDIA` foram definidos nesta implementação porque a modelagem aprovada não especificou prioridade; precisam ser validados com estudantes. Tipo `COMPARTILHADA` apenas distingue a intenção do registro nesta etapa: não há participantes, convites, subtarefas ou acesso de terceiros.
 
-`TarefaRepositoryTests` usa PostgreSQL para verificar os dois tipos, valores padrão, vínculo opcional/pertencente de disciplina, escopo de consultas e rejeição de título ou enums inválidos. Execute a suíte com `.\mvnw.cmd test` no PowerShell (com Java 21 e configuração de banco local) ou `./mvnw test` no macOS/Linux.
+| Método e caminho | Comportamento |
+| --- | --- |
+| `GET /api/v1/tarefas` | Lista tarefas próprias, ordenadas por prazo e ID. |
+| `POST /api/v1/tarefas` | Cria tarefa; o criador vem da sessão. Estado inicial `ABERTA`; prioridade padrão `MEDIA`. |
+| `GET /api/v1/tarefas/{id}` | Consulta uma tarefa própria. |
+| `PUT /api/v1/tarefas/{id}` | Atualiza título, descrição, disciplina, prazo e prioridade de uma tarefa aberta. Criador e tipo são imutáveis. |
+| `PATCH /api/v1/tarefas/{id}/estado` | Conclui ou reabre uma tarefa própria. |
+| `DELETE /api/v1/tarefas/{id}` | Exclui uma tarefa própria, aberta ou concluída. |
+
+Na listagem, podem ser combinados `disciplinaId`, `prazoInicio`, `prazoFim`, `prioridade` e `estado`. A ordenação usa `ordenarPor` (`DISCIPLINA`, `PRAZO`, `PRIORIDADE` ou `ESTADO`) e `direcao` (`ASC` ou `DESC`); por padrão, ordena por prazo crescente. Prioridade crescente segue `BAIXA`, `MEDIA`, `ALTA`; estado crescente segue `ABERTA`, `CONCLUIDA`. Datas usam `AAAA-MM-DD`; quando os dois limites são enviados, a data inicial precisa ser anterior ou igual à final. Um filtro por disciplina que não pertence à pessoa autenticada retorna lista vazia. Para IDs de tarefas alheias ou inexistentes, leitura, edição, alteração de estado e exclusão retornam `404 TAREFA_NOT_FOUND`, sem revelar a existência do registro. Associar disciplina alheia na criação/edição retorna `404 DISCIPLINA_NOT_FOUND`.
+
+Uma tarefa concluída precisa ser reaberta antes da edição dos dados centrais; ela ainda pode ser excluída. Como subtarefas não existem nesta etapa, o criador pode concluir diretamente. Quando subtarefas forem implementadas, a conclusão deverá verificar o progresso delas no serviço. Toda mudança exige sessão e CSRF, conforme as demais rotas autenticadas da API.
+
+`TarefaController` traduz HTTP, `TarefaService` aplica transações e escopo do criador, `TarefaRepository` monta os filtros e a ordenação escolhidos enquanto mantém o criador como condição obrigatória. Os testes `TarefaFlowIntegrationTests` verificam criação, lista e filtros/ordenação, visualização, edição, estado, exclusão, validação e isolamento entre contas; `TarefaRepositoryTests` confere constraints e persistência. Execute a suíte com `.\mvnw.cmd test` no PowerShell (com Java 21 e configuração de banco local) ou `./mvnw test` no macOS/Linux.

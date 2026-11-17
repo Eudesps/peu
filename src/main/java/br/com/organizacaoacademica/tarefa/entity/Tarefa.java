@@ -179,6 +179,28 @@ public class Tarefa {
 		return atualizadaEm;
 	}
 
+	public void alterarDadosCentrais(
+			String titulo,
+			String descricao,
+			Disciplina disciplina,
+			LocalDate prazo,
+			PrioridadeTarefa prioridade
+	) {
+		this.titulo = normalizarTexto(titulo);
+		this.descricao = normalizarDescricao(descricao);
+		this.disciplina = disciplina;
+		this.disciplinaId = disciplina == null ? null : disciplina.getId();
+		this.prazo = prazo;
+		this.prioridade = prioridade;
+	}
+
+	public void alterarEstado(EstadoTarefa estado) {
+		if (estado == null) {
+			throw new IllegalArgumentException("O estado da tarefa é obrigatório.");
+		}
+		this.estado = estado;
+	}
+
 	@PrePersist
 	void prepararParaPersistencia() {
 		this.titulo = normalizarTexto(this.titulo);

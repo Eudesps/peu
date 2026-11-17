@@ -2,6 +2,7 @@ package br.com.organizacaoacademica.tarefa.repository;
 
 import br.com.organizacaoacademica.disciplina.entity.Disciplina;
 import br.com.organizacaoacademica.disciplina.repository.DisciplinaRepository;
+import br.com.organizacaoacademica.tarefa.OrdenacaoTarefa;
 import br.com.organizacaoacademica.tarefa.entity.EstadoTarefa;
 import br.com.organizacaoacademica.tarefa.entity.PrioridadeTarefa;
 import br.com.organizacaoacademica.tarefa.entity.Tarefa;
@@ -14,6 +15,7 @@ import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.data.domain.Sort;
 
 import java.time.LocalDate;
 import java.util.UUID;
@@ -117,7 +119,8 @@ class TarefaRepositoryTests {
 		Tarefa segunda = salvarTarefa(criador, "Mais cedo", LocalDate.of(2026, 12, 5));
 		Tarefa deOutraPessoa = salvarTarefa(outraPessoa, "Privada", LocalDate.of(2026, 12, 1));
 
-		assertThat(tarefaRepository.findAllByCriador_IdOrderByPrazoAsc(criador.getId()))
+		assertThat(tarefaRepository.buscarComFiltrosDoCriador(
+				criador.getId(), null, null, null, null, null, OrdenacaoTarefa.PRAZO, Sort.Direction.ASC))
 				.extracting(Tarefa::getId)
 				.containsExactly(segunda.getId(), primeira.getId());
 		assertThat(tarefaRepository.findByIdAndCriador_Id(deOutraPessoa.getId(), criador.getId()))
