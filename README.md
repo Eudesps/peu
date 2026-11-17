@@ -370,7 +370,7 @@ Responsável principal, participante e estudante convidado são papéis que um m
 
 ## 11. Proposta de modelo relacional
 
-Este modelo lógico para PostgreSQL mantém criador, participantes aceitos e convites pendentes como conceitos separados. A migration `V1` implementa somente `usuario`; as demais entidades descritas aqui continuam como proposta até suas decisões pendentes serem validadas. Os nomes físicos usam `snake_case`.
+Este modelo lógico para PostgreSQL mantém criador, participantes aceitos e convites pendentes como conceitos separados. As migrations `V1` a `V3` implementam `usuario`, `disciplina` e o núcleo de `tarefa`; participantes, convites e subtarefas continuam como proposta até as etapas próprias. Os nomes físicos usam `snake_case`.
 
 ### 11.1 Diagrama ER
 
@@ -470,6 +470,7 @@ Não proponho unicidade pelo nome ainda, pois a mesma disciplina pode ser cursad
 - `tipo VARCHAR(16) NOT NULL` — `CHECK (tipo IN ('INDIVIDUAL', 'COMPARTILHADA'))`.
 - `titulo VARCHAR(160) NOT NULL` — incluir validação para impedir texto vazio ou só com espaços.
 - `descricao TEXT NULL`.
+- `prioridade VARCHAR(8) NOT NULL DEFAULT 'MEDIA'` — `CHECK (prioridade IN ('BAIXA', 'MEDIA', 'ALTA'))`. A modelagem aprovada não fixou níveis de prioridade; estes três valores são uma escolha inicial simples a validar com estudantes.
 - `prazo DATE NOT NULL` — proposta adequada para prazos definidos por dia. Se estudantes precisarem informar horário exato, rever para `TIMESTAMPTZ` antes da migration.
 - `estado VARCHAR(12) NOT NULL DEFAULT 'ABERTA'` — `CHECK (estado IN ('ABERTA', 'CONCLUIDA'))`.
 - `criada_em TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP`.
@@ -534,7 +535,7 @@ Chaves estrangeiras, `UNIQUE` e `CHECK` cobrem referências básicas, duplicidad
 - **Exclusão:** excluir tarefa pode usar `ON DELETE CASCADE` para participantes, convites e subtarefas, conforme as regras do produto. Remover uma disciplina referenciada fica bloqueado por `RESTRICT` até as tarefas serem desassociadas. A exclusão de usuário fica restrita enquanto houver dados relacionados, pois o comportamento de encerramento de conta ainda não foi definido.
 - **E-mail:** unicidade comum diferencia maiúsculas de minúsculas em PostgreSQL. Normalização no cadastro mais índice único funcional evita contas duplicadas por diferenças de caixa ou espaços.
 
-O login local por e-mail e senha já foi escolhido. As migrations V1 e V2 implementam somente `usuario` e `disciplina`; as tabelas de tarefas e colaboração ainda não foram criadas. Antes de implementar tarefas, ainda é preciso validar prazo por data ou horário, identificação de disciplina por período e comportamento de encerramento de conta.
+O login local por e-mail e senha já foi escolhido. As migrations V1, V2 e V3 criam `usuario`, `disciplina` e `tarefa`; colaboração permanece fora da implementação atual. Ainda é preciso validar prazo por data ou horário, os níveis de prioridade, identificação de disciplina por período e comportamento de encerramento de conta.
 
 ## 12. Arquitetura inicial
 
@@ -638,7 +639,7 @@ Os DTOs de requisição e resposta podem ser `record`s Java quando forem apenas 
 - **Front-end:** HTML, CSS e JavaScript servidos inicialmente pela mesma aplicação.
 - **Versionamento:** Git e GitHub.
 
-Hibernate está configurado com `ddl-auto=none`; a entidade `Usuario` e sua migration já existem, mas as outras entidades ainda não foram implementadas. Quando os mapeamentos e migrations correspondentes estiverem completos, a configuração poderá mudar para `ddl-auto=validate`, para conferir o esquema sem alterá-lo. As decisões ainda pendentes para as outras tabelas estão listadas na seção 11.4.
+Hibernate está configurado com `ddl-auto=none`; `Usuario`, `Disciplina` e `Tarefa` e suas migrations já existem. Participantes, convites e subtarefas ainda não foram implementados. A configuração poderá mudar para `ddl-auto=validate` depois de conferir que os mapeamentos atuais e o esquema completo coincidem. As regras pendentes para relacionamentos entre tabelas estão listadas na seção 11.4.
 
 ### 12.7 Testes por camada
 
@@ -649,7 +650,7 @@ Hibernate está configurado com `ddl-auto=none`; a entidade `Usuario` e sua migr
 
 ## 13. Próximo passo recomendado
 
-Validar primeiro o problema e o fluxo de colaboração com estudantes. Depois, revisar os requisitos marcados como “a validar”, definir os campos e estados mínimos de uma tarefa e transformar o escopo aprovado em etapas pequenas de implementação.
+Validar com estudantes o prazo por data ou horário e os níveis de prioridade escolhidos. Depois, implementar as operações de tarefa com autorização pelo criador; participantes, convites e subtarefas ficam para etapas próprias, após validar o fluxo de colaboração.
 
 ## 14. Instalação, configuração e execução
 
@@ -727,7 +728,7 @@ Flyway está habilitado em `application.properties` e procura migrations SQL em 
 
 Use nomes versionados no formato `V<VERSÃO>__<descrição>.sql`, por exemplo `V1__create_initial_schema.sql` e depois `V2__add_task_index.sql`. Uma migration versionada aplicada não deve ser editada; mudanças posteriores devem entrar em um novo arquivo e nova versão. Flyway registra as versões e seus checksums em `flyway_schema_history`. [Referência oficial de migrations versionadas](https://documentation.red-gate.com/fd/versioned-migrations-273973333.html).
 
-`V1__create_usuario.sql` cria `usuario`; `V2__create_disciplina.sql` cria `disciplina` e sua FK para `usuario`. Flyway aplica versões pendentes na inicialização. Ainda não há migrations para tarefa, participantes, convites ou subtarefas; essas tabelas dependem das decisões pendentes da seção 11.4. Hibernate permanece com `ddl-auto=none` para não competir com Flyway na criação do esquema. Spring Boot recomenda usar um único mecanismo de inicialização do esquema. [Documentação de inicialização de banco](https://docs.spring.io/spring-boot/how-to/data-initialization.html).
+`V1__create_usuario.sql` cria `usuario`; `V2__create_disciplina.sql` cria `disciplina` e sua FK para `usuario`; `V3__create_tarefa.sql` cria `tarefa`, suas restrições e índices. Participantes, convites e subtarefas ainda não têm migrations. Hibernate permanece com `ddl-auto=none` para não competir com Flyway na criação do esquema. Spring Boot recomenda usar um único mecanismo de inicialização do esquema. [Documentação de inicialização de banco](https://docs.spring.io/spring-boot/how-to/data-initialization.html).
 
 ## 15. Implementação inicial de Usuario
 
@@ -799,7 +800,7 @@ Os testes de integração usam MockMvc e PostgreSQL configurado para verificar c
 
 ## 17. Implementação de disciplinas
 
-A tabela `disciplina`, criada pela migration V2, contém `id`, `usuario_id`, `nome` e `criada_em`. O campo `usuario_id` é obrigatório e referencia `usuario.id` com `ON DELETE RESTRICT`. O índice por `usuario_id` ajuda a carregar a lista própria; a chave candidata `(id, usuario_id)` fica disponível para a futura FK composta de `tarefa`. Nomes podem se repetir, são aparados nas extremidades e precisam conter até 120 caracteres não vazios.
+A tabela `disciplina`, criada pela migration V2, contém `id`, `usuario_id`, `nome` e `criada_em`. O campo `usuario_id` é obrigatório e referencia `usuario.id` com `ON DELETE RESTRICT`. O índice por `usuario_id` ajuda a carregar a lista própria; a chave candidata `(id, usuario_id)` é usada pela FK composta de `tarefa`. Nomes podem se repetir, são aparados nas extremidades e precisam conter até 120 caracteres não vazios.
 
 | Método e caminho | Comportamento |
 | --- | --- |
@@ -809,6 +810,16 @@ A tabela `disciplina`, criada pela migration V2, contém `id`, `usuario_id`, `no
 | `PUT /api/v1/disciplinas/{id}` | Atualiza o nome de uma disciplina própria. |
 | `DELETE /api/v1/disciplinas/{id}` | Remove uma disciplina própria que não esteja associada a tarefas. |
 
-O controlador usa o e-mail da sessão autenticada para localizar o usuário. O serviço consulta ou altera disciplina sempre com os dois critérios, `id` e `usuario_id`; portanto, o corpo não pode escolher proprietário. Para não revelar se um ID pertence a outra conta, consulta, edição e exclusão retornam `404 DISCIPLINA_NOT_FOUND` tanto para ID inexistente quanto para ID alheio. Lista vazia é `200`. Se uma futura tarefa ainda referenciar a disciplina, a FK `RESTRICT` bloqueia a exclusão e a API responde `409 DISCIPLINA_IN_USE`; primeiro será necessário desassociar as tarefas.
+O controlador usa o e-mail da sessão autenticada para localizar o usuário. O serviço consulta ou altera disciplina sempre com os dois critérios, `id` e `usuario_id`; portanto, o corpo não pode escolher proprietário. Para não revelar se um ID pertence a outra conta, consulta, edição e exclusão retornam `404 DISCIPLINA_NOT_FOUND` tanto para ID inexistente quanto para ID alheio. Lista vazia é `200`. Se uma tarefa referenciar a disciplina, a FK `RESTRICT` bloqueia a exclusão e a API responde `409 DISCIPLINA_IN_USE`; primeiro será necessário desassociar as tarefas.
 
 `DisciplinaController` traduz HTTP, `DisciplinaService` aplica o escopo do proprietário e as transações, `DisciplinaRepository` filtra as consultas pelo usuário e `Disciplina` mapeia o relacionamento obrigatório. Os testes `DisciplinaFlowIntegrationTests` autentica duas contas e verificam CRUD do proprietário, lista/consulta de outra conta e tentativas de edição/exclusão entre contas.
+
+## 18. Modelo inicial de tarefas
+
+A migration `V3__create_tarefa.sql` implementa os campos `id`, criador, disciplina opcional, tipo, título, descrição, prazo, prioridade, estado e timestamps. A entidade `Tarefa` usa `LocalDate` para prazo e guarda enums como texto (`INDIVIDUAL`/`COMPARTILHADA`, `BAIXA`/`MEDIA`/`ALTA`, `ABERTA`/`CONCLUIDA`), o que mantém o significado legível no banco.
+
+O criador é obrigatório e imutável na entidade; o tipo também não tem operação de alteração. A FK composta `(disciplina_id, criador_id)` referencia `(disciplina.id, disciplina.usuario_id)`, garantindo no próprio banco que uma disciplina associada pertence ao criador. Título em branco e valores fora dos enums são rejeitados por constraints SQL, e os campos de aplicação têm validações compatíveis. Há índices para listar tarefas do criador por prazo e localizar as tarefas de uma disciplina.
+
+Os níveis `BAIXA`, `MEDIA` e `ALTA` e o padrão `MEDIA` foram definidos nesta implementação porque a modelagem aprovada não especificou prioridade; precisam ser validados com estudantes. Tipo `COMPARTILHADA` apenas distingue a intenção do registro nesta etapa: não há participantes, convites, subtarefas, acesso de terceiros ou endpoints de tarefas. O repositório fornece consultas filtradas pelo criador para servir de base ao futuro serviço de autorização, mas as operações HTTP e as regras de colaboração não foram implementadas.
+
+`TarefaRepositoryTests` usa PostgreSQL para verificar os dois tipos, valores padrão, vínculo opcional/pertencente de disciplina, escopo de consultas e rejeição de título ou enums inválidos. Execute a suíte com `.\mvnw.cmd test` no PowerShell (com Java 21 e configuração de banco local) ou `./mvnw test` no macOS/Linux.
