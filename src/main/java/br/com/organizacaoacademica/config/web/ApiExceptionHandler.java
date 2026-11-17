@@ -4,7 +4,9 @@ import br.com.organizacaoacademica.disciplina.service.DisciplinaEmUsoException;
 import br.com.organizacaoacademica.disciplina.service.DisciplinaNaoEncontradaException;
 import br.com.organizacaoacademica.tarefa.service.FiltroTarefaInvalidoException;
 import br.com.organizacaoacademica.tarefa.service.TarefaConcluidaException;
+import br.com.organizacaoacademica.tarefa.service.TarefaDadosInvalidosException;
 import br.com.organizacaoacademica.tarefa.service.TarefaNaoEncontradaException;
+import br.com.organizacaoacademica.tarefa.service.TarefaTransicaoEstadoInvalidaException;
 import br.com.organizacaoacademica.usuario.service.CredenciaisInvalidasException;
 import br.com.organizacaoacademica.usuario.service.EmailJaCadastradoException;
 import br.com.organizacaoacademica.usuario.service.SenhaForaDaPoliticaException;
@@ -35,6 +37,22 @@ public class ApiExceptionHandler {
 			HttpServletRequest request
 	) {
 		return erro(HttpStatus.CONFLICT, "TAREFA_CONCLUIDA", exception.getMessage(), request);
+	}
+
+	@ExceptionHandler(TarefaDadosInvalidosException.class)
+	public ResponseEntity<ApiErrorResponse> dadosDaTarefaInvalidos(
+			TarefaDadosInvalidosException exception,
+			HttpServletRequest request
+	) {
+		return erro(HttpStatus.BAD_REQUEST, "INVALID_TASK_DATA", exception.getMessage(), request);
+	}
+
+	@ExceptionHandler(TarefaTransicaoEstadoInvalidaException.class)
+	public ResponseEntity<ApiErrorResponse> transicaoDeEstadoInvalida(
+			TarefaTransicaoEstadoInvalidaException exception,
+			HttpServletRequest request
+	) {
+		return erro(HttpStatus.CONFLICT, "INVALID_TASK_STATE_TRANSITION", exception.getMessage(), request);
 	}
 
 	@ExceptionHandler(FiltroTarefaInvalidoException.class)

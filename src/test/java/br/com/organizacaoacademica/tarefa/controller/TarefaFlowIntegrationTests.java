@@ -249,6 +249,7 @@ class TarefaFlowIntegrationTests {
 	void criadorPodeReabrirTarefaEExcluirSuaTarefa() throws Exception {
 		SessaoUsuario usuario = criarUsuarioAutenticado();
 		long tarefaId = criarTarefa(usuario, tarefaBasica("Excluir depois"));
+		alterarEstado(usuario, tarefaId, EstadoTarefa.ABERTA);
 		alterarEstado(usuario, tarefaId, EstadoTarefa.CONCLUIDA);
 		alterarEstado(usuario, tarefaId, EstadoTarefa.ABERTA);
 		alterarEstado(usuario, tarefaId, EstadoTarefa.CONCLUIDA);
@@ -269,6 +270,7 @@ class TarefaFlowIntegrationTests {
 		SessaoUsuario outraPessoa = criarUsuarioAutenticado();
 		long disciplinaAlheia = criarDisciplina(proprietario, "Disciplina privada");
 		long tarefaDaOutraPessoa = criarTarefa(outraPessoa, tarefaBasica("Sem disciplina"));
+		long tarefaPropria = criarTarefa(proprietario, tarefaBasica("Validar atualização"));
 		Csrf csrf = obterCsrf(outraPessoa.sessao());
 
 		mockMvc.perform(post("/api/v1/tarefas")
@@ -302,6 +304,67 @@ class TarefaFlowIntegrationTests {
 							LocalDate.of(2026, 12, 10), PrioridadeTarefa.MEDIA))))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
+		Csrf csrfCamposObrigatorios = obterCsrf(proprietario.sessao());
+		mockMvc.perform(post("/api/v1/tarefas")
+					.session(csrfCamposObrigatorios.sessao())
+					.header(csrfCamposObrigatorios.header(), csrfCamposObrigatorios.token())
+					.contentType(MediaType.APPLICATION_JSON)
+					.content("{\"tipo\":\"INDIVIDUAL\",\"titulo\":\"Sem prazo\"}"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
+		Csrf csrfTipoObrigatorio = obterCsrf(proprietario.sessao());
+		mockMvc.perform(post("/api/v1/tarefas")
+					.session(csrfTipoObrigatorio.sessao())
+					.header(csrfTipoObrigatorio.header(), csrfTipoObrigatorio.token())
+					.contentType(MediaType.APPLICATION_JSON)
+					.content("{\"titulo\":\"Sem tipo\",\"prazo\":\"2026-12-10\"}"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
+		Csrf csrfPrioridadeInvalida = obterCsrf(proprietario.sessao());
+		mockMvc.perform(post("/api/v1/tarefas")
+					.session(csrfPrioridadeInvalida.sessao())
+					.header(csrfPrioridadeInvalida.header(), csrfPrioridadeInvalida.token())
+					.contentType(MediaType.APPLICATION_JSON)
+					.content("{\"tipo\":\"INDIVIDUAL\",\"titulo\":\"Prioridade inválida\","
+							+ "\"prazo\":\"2026-12-10\",\"prioridade\":\"URGENTE\"}"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("MALFORMED_REQUEST"));
+
+		Csrf csrfDataInvalida = obterCsrf(proprietario.sessao());
+		mockMvc.perform(post("/api/v1/tarefas")
+					.session(csrfDataInvalida.sessao())
+					.header(csrfDataInvalida.header(), csrfDataInvalida.token())
+					.contentType(MediaType.APPLICATION_JSON)
+					.content("{\"tipo\":\"INDIVIDUAL\",\"titulo\":\"Data inválida\","
+							+ "\"prazo\":\"2026-02-30\"}"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("MALFORMED_REQUEST"));
+
+		Csrf csrfPrioridadeEdicao = obterCsrf(proprietario.sessao());
+		mockMvc.perform(put("/api/v1/tarefas/{id}", tarefaPropria)
+					.session(csrfPrioridadeEdicao.sessao())
+					.header(csrfPrioridadeEdicao.header(), csrfPrioridadeEdicao.token())
+					.contentType(MediaType.APPLICATION_JSON)
+					.content(jsonMapper.writeValueAsString(new TarefaAtualizarRequest(
+							"Sem prioridade", null, null, LocalDate.of(2026, 12, 10), null))))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
+		Csrf csrfEstadoObrigatorio = obterCsrf(proprietario.sessao());
+		mockMvc.perform(patch("/api/v1/tarefas/{id}/estado", tarefaPropria)
+					.session(csrfEstadoObrigatorio.sessao())
+					.header(csrfEstadoObrigatorio.header(), csrfEstadoObrigatorio.token())
+					.contentType(MediaType.APPLICATION_JSON)
+					.content("{\"estado\":null}"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
+		criarTarefa(proprietario, new TarefaCriarRequest(
+				TipoTarefa.INDIVIDUAL, "Atividade atrasada", null, null,
+				LocalDate.of(2020, 1, 1), PrioridadeTarefa.BAIXA));
 
 		mockMvc.perform(get("/api/v1/tarefas")
 					.session(proprietario.sessao())

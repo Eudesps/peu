@@ -49,7 +49,8 @@ public class TarefaService {
 			OrdenacaoTarefa ordenarPor,
 			Sort.Direction direcao
 	) {
-		if (prazoInicio != null && prazoFim != null && prazoInicio.isAfter(prazoFim)) {
+		if (prazoInicio != null && prazoFim != null && prazoInicio.isAfter(prazoFim)
+				|| ordenarPor == null || direcao == null) {
 			throw new FiltroTarefaInvalidoException();
 		}
 		Long criadorId = buscarUsuario(emailAutenticado).getId();
@@ -68,6 +69,7 @@ public class TarefaService {
 
 	@Transactional
 	public TarefaResponse criar(String emailAutenticado, TarefaCriarRequest request) {
+		validarCriacao(request);
 		Usuario criador = buscarUsuario(emailAutenticado);
 		Disciplina disciplina = buscarDisciplinaDoCriador(request.disciplinaId(), criador.getId());
 		Tarefa tarefa = new Tarefa(
@@ -89,6 +91,7 @@ public class TarefaService {
 		if (tarefa.getEstado() == EstadoTarefa.CONCLUIDA) {
 			throw new TarefaConcluidaException();
 		}
+		validarEdicao(request);
 		Disciplina disciplina = buscarDisciplinaDoCriador(request.disciplinaId(), criadorId);
 		tarefa.alterarDadosCentrais(
 				request.titulo(),
@@ -105,6 +108,10 @@ public class TarefaService {
 	public TarefaResponse alterarEstado(String emailAutenticado, Long tarefaId, EstadoTarefa estado) {
 		Long criadorId = buscarUsuario(emailAutenticado).getId();
 		Tarefa tarefa = buscarTarefaDoCriador(tarefaId, criadorId);
+		validarTransicao(tarefa.getEstado(), estado);
+		if (tarefa.getEstado() == estado) {
+			return paraResposta(tarefa);
+		}
 		tarefa.alterarEstado(estado);
 		tarefaRepository.flush();
 		return paraResposta(tarefa);
@@ -121,6 +128,42 @@ public class TarefaService {
 		String emailNormalizado = emailAutenticado.trim().toLowerCase(Locale.ROOT);
 		return usuarioRepository.findByEmailIgnoreCase(emailNormalizado)
 				.orElseThrow(() -> new IllegalStateException("A conta autenticada não foi encontrada."));
+	}
+
+	private static void validarCriacao(TarefaCriarRequest request) {
+		if (request == null || request.tipo() == null) {
+			throw new TarefaDadosInvalidosException();
+		}
+		validarTituloEPrazo(request.titulo(), request.prazo());
+		// Prioridade nula na criação é válida: a entidade assume MEDIA como padrão.
+	}
+
+	private static void validarEdicao(TarefaAtualizarRequest request) {
+		if (request == null || request.prioridade() == null) {
+			throw new TarefaDadosInvalidosException();
+		}
+		validarTituloEPrazo(request.titulo(), request.prazo());
+	}
+
+	private static void validarTituloEPrazo(String titulo, LocalDate prazo) {
+		if (titulo == null || titulo.isBlank() || titulo.length() > 160 || prazo == null) {
+			throw new TarefaDadosInvalidosException();
+		}
+		// Prazos passados são aceitos para permitir registrar e acompanhar tarefas atrasadas.
+	}
+
+	private static void validarTransicao(EstadoTarefa estadoAtual, EstadoTarefa novoEstado) {
+		if (estadoAtual == null || novoEstado == null) {
+			throw new TarefaDadosInvalidosException();
+		}
+		if (estadoAtual == novoEstado) {
+			return;
+		}
+		boolean permitida = estadoAtual == EstadoTarefa.ABERTA && novoEstado == EstadoTarefa.CONCLUIDA
+				|| estadoAtual == EstadoTarefa.CONCLUIDA && novoEstado == EstadoTarefa.ABERTA;
+		if (!permitida) {
+			throw new TarefaTransicaoEstadoInvalidaException();
+		}
 	}
 
 	private Disciplina buscarDisciplinaDoCriador(Long disciplinaId, Long criadorId) {
