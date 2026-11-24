@@ -9,6 +9,7 @@ import br.com.organizacaoacademica.tarefa.entity.PrioridadeTarefa;
 import br.com.organizacaoacademica.tarefa.entity.Tarefa;
 import br.com.organizacaoacademica.tarefa.entity.TipoTarefa;
 import br.com.organizacaoacademica.tarefa.repository.TarefaRepository;
+import br.com.organizacaoacademica.tarefa.repository.ConviteTarefaRepository;
 import br.com.organizacaoacademica.usuario.entity.Usuario;
 import br.com.organizacaoacademica.usuario.repository.UsuarioRepository;
 import org.junit.jupiter.api.Test;
@@ -39,6 +40,9 @@ class TarefaServiceValidacaoTests {
 
 	@Mock
 	private UsuarioRepository usuarioRepository;
+
+	@Mock
+	private ConviteTarefaRepository conviteTarefaRepository;
 
 	@InjectMocks
 	private TarefaService tarefaService;

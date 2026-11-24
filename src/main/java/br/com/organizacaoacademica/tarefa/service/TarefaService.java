@@ -7,10 +7,13 @@ import br.com.organizacaoacademica.tarefa.OrdenacaoTarefa;
 import br.com.organizacaoacademica.tarefa.dto.TarefaAtualizarRequest;
 import br.com.organizacaoacademica.tarefa.dto.TarefaCriarRequest;
 import br.com.organizacaoacademica.tarefa.dto.TarefaResponse;
+import br.com.organizacaoacademica.tarefa.entity.ConviteTarefa;
+import br.com.organizacaoacademica.tarefa.entity.EstadoConvite;
 import br.com.organizacaoacademica.tarefa.entity.EstadoTarefa;
 import br.com.organizacaoacademica.tarefa.entity.PrioridadeTarefa;
 import br.com.organizacaoacademica.tarefa.entity.Tarefa;
 import br.com.organizacaoacademica.tarefa.repository.TarefaRepository;
+import br.com.organizacaoacademica.tarefa.repository.ConviteTarefaRepository;
 import br.com.organizacaoacademica.usuario.entity.Usuario;
 import br.com.organizacaoacademica.usuario.repository.UsuarioRepository;
 import org.springframework.stereotype.Service;
@@ -27,15 +30,18 @@ public class TarefaService {
 	private final TarefaRepository tarefaRepository;
 	private final DisciplinaRepository disciplinaRepository;
 	private final UsuarioRepository usuarioRepository;
+	private final ConviteTarefaRepository conviteTarefaRepository;
 
 	public TarefaService(
 			TarefaRepository tarefaRepository,
 			DisciplinaRepository disciplinaRepository,
-			UsuarioRepository usuarioRepository
+			UsuarioRepository usuarioRepository,
+			ConviteTarefaRepository conviteTarefaRepository
 	) {
 		this.tarefaRepository = tarefaRepository;
 		this.disciplinaRepository = disciplinaRepository;
 		this.usuarioRepository = usuarioRepository;
+		this.conviteTarefaRepository = conviteTarefaRepository;
 	}
 
 	@Transactional(readOnly = true)
@@ -53,9 +59,9 @@ public class TarefaService {
 				|| ordenarPor == null || direcao == null) {
 			throw new FiltroTarefaInvalidoException();
 		}
-		Long criadorId = buscarUsuario(emailAutenticado).getId();
-		return tarefaRepository.buscarComFiltrosDoCriador(
-				criadorId, disciplinaId, prazoInicio, prazoFim, prioridade, estado, ordenarPor, direcao)
+		Long usuarioId = buscarUsuario(emailAutenticado).getId();
+		return tarefaRepository.buscarComFiltrosAcessiveisAoUsuario(
+				usuarioId, disciplinaId, prazoInicio, prazoFim, prioridade, estado, ordenarPor, direcao)
 				.stream()
 				.map(TarefaService::paraResposta)
 				.toList();
@@ -63,8 +69,10 @@ public class TarefaService {
 
 	@Transactional(readOnly = true)
 	public TarefaResponse buscar(String emailAutenticado, Long tarefaId) {
-		Long criadorId = buscarUsuario(emailAutenticado).getId();
-		return paraResposta(buscarTarefaDoCriador(tarefaId, criadorId));
+		Long usuarioId = buscarUsuario(emailAutenticado).getId();
+		Tarefa tarefa = tarefaRepository.findByIdAcessivelAoUsuario(tarefaId, usuarioId)
+				.orElseThrow(TarefaNaoEncontradaException::new);
+		return paraResposta(tarefa);
 	}
 
 	@Transactional
@@ -113,6 +121,10 @@ public class TarefaService {
 			return paraResposta(tarefa);
 		}
 		tarefa.alterarEstado(estado);
+		if (estado == EstadoTarefa.CONCLUIDA) {
+			conviteTarefaRepository.findAllByTarefa_IdAndEstado(tarefaId, EstadoConvite.PENDENTE)
+					.forEach(ConviteTarefa::cancelar);
+		}
 		tarefaRepository.flush();
 		return paraResposta(tarefa);
 	}

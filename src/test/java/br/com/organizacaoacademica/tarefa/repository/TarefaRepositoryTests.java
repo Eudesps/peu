@@ -119,7 +119,7 @@ class TarefaRepositoryTests {
 		Tarefa segunda = salvarTarefa(criador, "Mais cedo", LocalDate.of(2026, 12, 5));
 		Tarefa deOutraPessoa = salvarTarefa(outraPessoa, "Privada", LocalDate.of(2026, 12, 1));
 
-		assertThat(tarefaRepository.buscarComFiltrosDoCriador(
+		assertThat(tarefaRepository.buscarComFiltrosAcessiveisAoUsuario(
 				criador.getId(), null, null, null, null, null, OrdenacaoTarefa.PRAZO, Sort.Direction.ASC))
 				.extracting(Tarefa::getId)
 				.containsExactly(segunda.getId(), primeira.getId());

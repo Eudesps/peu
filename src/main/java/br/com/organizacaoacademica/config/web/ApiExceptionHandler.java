@@ -2,6 +2,12 @@ package br.com.organizacaoacademica.config.web;
 
 import br.com.organizacaoacademica.disciplina.service.DisciplinaEmUsoException;
 import br.com.organizacaoacademica.disciplina.service.DisciplinaNaoEncontradaException;
+import br.com.organizacaoacademica.tarefa.service.ConviteConflitoException;
+import br.com.organizacaoacademica.tarefa.service.ConviteDadosInvalidosException;
+import br.com.organizacaoacademica.tarefa.service.ConviteEstadoInvalidoException;
+import br.com.organizacaoacademica.tarefa.service.ConviteNaoEncontradoException;
+import br.com.organizacaoacademica.tarefa.service.ConviteNaoPermitidoException;
+import br.com.organizacaoacademica.tarefa.service.UsuarioConvidadoNaoEncontradoException;
 import br.com.organizacaoacademica.tarefa.service.FiltroTarefaInvalidoException;
 import br.com.organizacaoacademica.tarefa.service.TarefaConcluidaException;
 import br.com.organizacaoacademica.tarefa.service.TarefaDadosInvalidosException;
@@ -22,6 +28,54 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 /** Converte erros conhecidos de entrada e autenticação para respostas estáveis da API. */
 @RestControllerAdvice
 public class ApiExceptionHandler {
+
+	@ExceptionHandler(ConviteNaoEncontradoException.class)
+	public ResponseEntity<ApiErrorResponse> conviteNaoEncontrado(
+			ConviteNaoEncontradoException exception,
+			HttpServletRequest request
+	) {
+		return erro(HttpStatus.NOT_FOUND, "INVITATION_NOT_FOUND", exception.getMessage(), request);
+	}
+
+	@ExceptionHandler(UsuarioConvidadoNaoEncontradoException.class)
+	public ResponseEntity<ApiErrorResponse> usuarioConvidadoNaoEncontrado(
+			UsuarioConvidadoNaoEncontradoException exception,
+			HttpServletRequest request
+	) {
+		return erro(HttpStatus.NOT_FOUND, "INVITEE_NOT_FOUND", exception.getMessage(), request);
+	}
+
+	@ExceptionHandler(ConviteDadosInvalidosException.class)
+	public ResponseEntity<ApiErrorResponse> dadosDoConviteInvalidos(
+			ConviteDadosInvalidosException exception,
+			HttpServletRequest request
+	) {
+		return erro(HttpStatus.BAD_REQUEST, "INVALID_INVITATION_DATA", exception.getMessage(), request);
+	}
+
+	@ExceptionHandler(ConviteConflitoException.class)
+	public ResponseEntity<ApiErrorResponse> conviteEmConflito(
+			ConviteConflitoException exception,
+			HttpServletRequest request
+	) {
+		return erro(HttpStatus.CONFLICT, "INVITATION_CONFLICT", exception.getMessage(), request);
+	}
+
+	@ExceptionHandler(ConviteEstadoInvalidoException.class)
+	public ResponseEntity<ApiErrorResponse> estadoDoConviteInvalido(
+			ConviteEstadoInvalidoException exception,
+			HttpServletRequest request
+	) {
+		return erro(HttpStatus.CONFLICT, "INVALID_INVITATION_STATE", exception.getMessage(), request);
+	}
+
+	@ExceptionHandler(ConviteNaoPermitidoException.class)
+	public ResponseEntity<ApiErrorResponse> conviteNaoPermitido(
+			ConviteNaoPermitidoException exception,
+			HttpServletRequest request
+	) {
+		return erro(HttpStatus.CONFLICT, "INVITATION_NOT_ALLOWED", exception.getMessage(), request);
+	}
 
 	@ExceptionHandler(TarefaNaoEncontradaException.class)
 	public ResponseEntity<ApiErrorResponse> tarefaNaoEncontrada(

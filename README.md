@@ -370,7 +370,7 @@ Responsável principal, participante e estudante convidado são papéis que um m
 
 ## 11. Proposta de modelo relacional
 
-Este modelo lógico para PostgreSQL mantém criador, participantes aceitos e convites pendentes como conceitos separados. As migrations `V1` a `V4` implementam `usuario`, `disciplina`, o núcleo de `tarefa` e o vínculo de participantes; convites e subtarefas continuam como proposta até as etapas próprias. Os nomes físicos usam `snake_case`.
+Este modelo lógico para PostgreSQL mantém criador, participantes aceitos e convites pendentes como conceitos separados. As migrations `V1` a `V5` implementam `usuario`, `disciplina`, o núcleo de `tarefa`, o vínculo de participantes e convites; subtarefas continuam como proposta até a etapa própria. Os nomes físicos usam `snake_case`.
 
 ### 11.1 Diagrama ER
 
@@ -535,7 +535,7 @@ Chaves estrangeiras, `UNIQUE` e `CHECK` cobrem referências básicas, duplicidad
 - **Exclusão:** excluir tarefa pode usar `ON DELETE CASCADE` para participantes, convites e subtarefas, conforme as regras do produto. Remover uma disciplina referenciada fica bloqueado por `RESTRICT` até as tarefas serem desassociadas. A exclusão de usuário fica restrita enquanto houver dados relacionados, pois o comportamento de encerramento de conta ainda não foi definido.
 - **E-mail:** unicidade comum diferencia maiúsculas de minúsculas em PostgreSQL. Normalização no cadastro mais índice único funcional evita contas duplicadas por diferenças de caixa ou espaços.
 
-O login local por e-mail e senha já foi escolhido. As migrations V1 a V4 criam `usuario`, `disciplina`, `tarefa` e o vínculo de participantes ativos. Convites, subtarefas e operações de colaboração permanecem fora da implementação atual. Ainda é preciso validar prazo por data ou horário, os níveis de prioridade, identificação de disciplina por período e comportamento de encerramento de conta.
+O login local por e-mail e senha já foi escolhido. As migrations V1 a V5 criam `usuario`, `disciplina`, `tarefa`, participantes ativos e convites. Subtarefas e operações de colaboração relacionadas a elas permanecem fora da implementação atual. Ainda é preciso validar prazo por data ou horário, os níveis de prioridade, identificação de disciplina por período e comportamento de encerramento de conta.
 
 ## 12. Arquitetura inicial
 
@@ -639,7 +639,7 @@ Os DTOs de requisição e resposta podem ser `record`s Java quando forem apenas 
 - **Front-end:** HTML, CSS e JavaScript servidos inicialmente pela mesma aplicação.
 - **Versionamento:** Git e GitHub.
 
-Hibernate está configurado com `ddl-auto=none`; `Usuario`, `Disciplina`, `Tarefa` e `ParticipanteTarefa` têm migrations correspondentes. Convites, subtarefas e seus fluxos ainda não foram implementados. A configuração poderá mudar para `ddl-auto=validate` depois de conferir que os mapeamentos atuais e o esquema completo coincidem. As regras pendentes para relacionamentos entre tabelas estão listadas na seção 11.4.
+Hibernate está configurado com `ddl-auto=none`; `Usuario`, `Disciplina`, `Tarefa`, `ParticipanteTarefa` e `ConviteTarefa` têm migrations correspondentes. Subtarefas e seus fluxos ainda não foram implementados. A configuração poderá mudar para `ddl-auto=validate` depois de conferir que os mapeamentos atuais e o esquema completo coincidem. As regras pendentes para relacionamentos entre tabelas estão listadas na seção 11.4.
 
 ### 12.7 Testes por camada
 
@@ -728,7 +728,7 @@ Flyway está habilitado em `application.properties` e procura migrations SQL em 
 
 Use nomes versionados no formato `V<VERSÃO>__<descrição>.sql`, por exemplo `V1__create_initial_schema.sql` e depois `V2__add_task_index.sql`. Uma migration versionada aplicada não deve ser editada; mudanças posteriores devem entrar em um novo arquivo e nova versão. Flyway registra as versões e seus checksums em `flyway_schema_history`. [Referência oficial de migrations versionadas](https://documentation.red-gate.com/fd/versioned-migrations-273973333.html).
 
-`V1__create_usuario.sql` cria `usuario`; `V2__create_disciplina.sql` cria `disciplina` e sua FK para `usuario`; `V3__create_tarefa.sql` cria `tarefa`; `V4__create_participante_tarefa.sql` cria o vínculo de participantes ativos, suas FKs e índices. Convites e subtarefas ainda não têm migrations. Hibernate permanece com `ddl-auto=none` para não competir com Flyway na criação do esquema. Spring Boot recomenda usar um único mecanismo de inicialização de banco. [Documentação de inicialização de banco](https://docs.spring.io/spring-boot/how-to/data-initialization.html).
+`V1__create_usuario.sql` cria `usuario`; `V2__create_disciplina.sql` cria `disciplina` e sua FK para `usuario`; `V3__create_tarefa.sql` cria `tarefa`; `V4__create_participante_tarefa.sql` cria o vínculo de participantes ativos; `V5__create_convite_tarefa.sql` cria convites, restrições de estado e índices. Hibernate permanece com `ddl-auto=none` para não competir com Flyway na criação do esquema. Spring Boot recomenda usar um único mecanismo de inicialização de banco. [Documentação de inicialização de banco](https://docs.spring.io/spring-boot/how-to/data-initialization.html).
 
 ## 15. Implementação inicial de Usuario
 
@@ -820,7 +820,7 @@ A migration `V3__create_tarefa.sql` implementa os campos `id`, criador, discipli
 
 O criador é obrigatório e imutável na entidade; o tipo também não tem operação de alteração. A FK composta `(disciplina_id, criador_id)` referencia `(disciplina.id, disciplina.usuario_id)`, garantindo no próprio banco que uma disciplina associada pertence ao criador. Título em branco e valores fora dos enums são rejeitados por constraints SQL, e os campos de aplicação têm validações compatíveis. Há índices para listar tarefas do criador por prazo e localizar as tarefas de uma disciplina.
 
-Os níveis `BAIXA`, `MEDIA` e `ALTA` e o padrão `MEDIA` foram definidos nesta implementação porque a modelagem aprovada não especificou prioridade; precisam ser validados com estudantes. O vínculo persistente de participantes foi implementado; convites, subtarefas e acesso de terceiros pela API ainda não estão disponíveis.
+Os níveis `BAIXA`, `MEDIA` e `ALTA` e o padrão `MEDIA` foram definidos nesta implementação porque a modelagem aprovada não especificou prioridade; precisam ser validados com estudantes. O vínculo persistente de participantes e o fluxo de convite e resposta estão implementados; subtarefas ainda não estão disponíveis.
 
 | Método e caminho | Comportamento |
 | --- | --- |
@@ -847,8 +847,28 @@ O service só aceita `ABERTA` para `CONCLUIDA` e `CONCLUIDA` para `ABERTA`; repe
 
 A migration `V4__create_participante_tarefa.sql` cria `participante_tarefa` com chave primária composta `(tarefa_id, usuario_id)`, chaves estrangeiras para tarefa e usuário e o instante `adicionado_em`. A exclusão de uma tarefa remove seus vínculos (`ON DELETE CASCADE`); a exclusão de usuário é restringida enquanto houver vínculos (`ON DELETE RESTRICT`). O índice por `usuario_id` apoia consultas futuras das tarefas em que uma pessoa participa.
 
-O criador permanece em `tarefa.criador_id` como responsável principal e não recebe uma linha em `participante_tarefa`. Cada linha representa uma participação já aceita e ativa; portanto, a presença do vínculo representa o estado ativo. Convites pendentes, recusados e cancelados continuam sendo estados de uma futura entidade `convite_tarefa`, sem conceder acesso por meio desta tabela. A chave composta impede duplicar a mesma pessoa na mesma tarefa.
+O criador permanece em `tarefa.criador_id` como responsável principal e não recebe uma linha em `participante_tarefa`. Cada linha representa uma participação já aceita e ativa; portanto, a presença do vínculo representa o estado ativo. Convites pendentes, recusados e cancelados são armazenados separadamente em `convite_tarefa`, sem conceder acesso por meio da tabela de participantes. A chave composta impede duplicar a mesma pessoa na mesma tarefa.
 
-`ParticipanteTarefa` mapeia os dois relacionamentos com `@ManyToOne` e usa `ParticipanteTarefaId` com `@EmbeddedId`/`@MapsId` para refletir a chave composta. O construtor rejeita vínculo com tarefa individual, com o próprio criador ou com registros ainda não persistidos. Essas verificações de domínio não substituem autorização: ao implementar convites e operações de colaboração, o service deverá verificar novamente o tipo da tarefa, a identidade autenticada e o estado do vínculo. Escritas SQL diretas ainda podem associar uma tarefa individual, pois a migration não usa trigger para impor uma regra entre tabelas.
+`ParticipanteTarefa` mapeia os dois relacionamentos com `@ManyToOne` e usa `ParticipanteTarefaId` com `@EmbeddedId`/`@MapsId` para refletir a chave composta. O construtor rejeita vínculo com tarefa individual, com o próprio criador ou com registros ainda não persistidos. `ConviteTarefaService` também verifica o tipo, a identidade autenticada e o estado do convite antes de criar uma participação. Operações futuras de remoção e subtarefas terão de repetir as verificações de acesso. Escritas SQL diretas ainda podem associar uma tarefa individual, pois a migration não usa trigger para impor uma regra entre tabelas.
 
 `ParticipanteTarefaPersistenceTests` verifica a leitura do relacionamento e a data de inclusão, duplicidade da chave, integridade das duas FKs e as invariantes de tarefa compartilhada e criador.
+
+## 20. Convites para tarefas compartilhadas
+
+A migration `V5__create_convite_tarefa.sql` cria convites vinculados a uma tarefa e a uma conta existente. O criador é inferido da tarefa e autenticado pela sessão; o corpo da requisição contém somente o e-mail da conta convidada. Não são gerados links ou tokens públicos. O e-mail é a forma de localizar contas nesta primeira implementação; a escolha do identificador ainda pode ser validada com estudantes.
+
+Estados: `PENDENTE` enquanto aguarda resposta, `ACEITO` ou `RECUSADO` após resposta da pessoa convidada, e `CANCELADO` quando o criador cancela ou conclui a tarefa. `respondido_em` fica nulo apenas em convites pendentes. Um índice único parcial impede convites pendentes repetidos para a mesma pessoa e tarefa; convites recusados ou cancelados podem ser reenviados, mas uma participação ativa não pode ser convidada novamente.
+
+| Método e caminho | Acesso e comportamento |
+| --- | --- |
+| `POST /api/v1/tarefas/{id}/convites` | Criador convida uma conta existente pelo e-mail em tarefa compartilhada e aberta. |
+| `GET /api/v1/tarefas/{id}/convites` | Criador consulta os convites daquela tarefa e seus estados. |
+| `GET /api/v1/tarefas/{tarefaId}/convites/{conviteId}` | Criador consulta um convite da própria tarefa. |
+| `DELETE /api/v1/tarefas/{tarefaId}/convites/{conviteId}` | Criador cancela um convite pendente enquanto a tarefa está aberta. |
+| `GET /api/v1/convites` | Conta autenticada lista apenas os convites recebidos por ela. |
+| `GET /api/v1/convites/{id}` | Somente a conta convidada consulta esse convite. |
+| `PATCH /api/v1/convites/{id}/resposta` | Conta convidada aceita (`ACEITO`) ou recusa (`RECUSADO`) o convite pendente. |
+
+Todas as rotas exigem sessão; operações de escrita exigem CSRF. Um aceite cria a participação ativa e atualiza o convite dentro da mesma transação. Só depois do aceite a pessoa pode listar e consultar a tarefa. Participantes não ganham permissão para editar dados centrais, concluir ou excluir a tarefa. A conclusão da tarefa cancela convites pendentes, e esses convites não podem ser aceitos depois.
+
+`ConviteTarefaService` valida a identidade autenticada, o papel do criador/destinatário, o tipo e estado da tarefa, duplicidade e existência da conta. `ConviteTarefaFlowIntegrationTests` cobre os estados, reenvio, acesso pós-aceite, isolamento entre contas, CSRF e cancelamento ao concluir a tarefa. Notificações por e-mail e gestão de subtarefas não fazem parte desta etapa.

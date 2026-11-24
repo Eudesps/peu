@@ -3,13 +3,17 @@ package br.com.organizacaoacademica.tarefa.repository;
 import br.com.organizacaoacademica.tarefa.OrdenacaoTarefa;
 import br.com.organizacaoacademica.tarefa.entity.EstadoTarefa;
 import br.com.organizacaoacademica.tarefa.entity.PrioridadeTarefa;
+import br.com.organizacaoacademica.tarefa.entity.ParticipanteTarefa;
 import br.com.organizacaoacademica.tarefa.entity.Tarefa;
 import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Predicate;
+import jakarta.persistence.criteria.Subquery;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -19,8 +23,8 @@ import java.util.Optional;
 /** Consultas de tarefas com opções de escopo pelo usuário criador. */
 public interface TarefaRepository extends JpaRepository<Tarefa, Long>, JpaSpecificationExecutor<Tarefa> {
 
-	default List<Tarefa> buscarComFiltrosDoCriador(
-			Long criadorId,
+	default List<Tarefa> buscarComFiltrosAcessiveisAoUsuario(
+			Long usuarioId,
 			Long disciplinaId,
 			LocalDate prazoInicio,
 			LocalDate prazoFim,
@@ -31,7 +35,17 @@ public interface TarefaRepository extends JpaRepository<Tarefa, Long>, JpaSpecif
 	) {
 		Specification<Tarefa> filtros = (root, query, builder) -> {
 			List<Predicate> condicoes = new ArrayList<>();
-			condicoes.add(builder.equal(root.get("criador").get("id"), criadorId));
+			Subquery<Long> participacoes = query.subquery(Long.class);
+			var participante = participacoes.from(ParticipanteTarefa.class);
+			participacoes.select(participante.get("tarefa").get("id"));
+			participacoes.where(
+					builder.equal(participante.get("usuario").get("id"), usuarioId),
+					builder.equal(participante.get("tarefa").get("id"), root.get("id"))
+			);
+			condicoes.add(builder.or(
+					builder.equal(root.get("criador").get("id"), usuarioId),
+					builder.exists(participacoes)
+			));
 			if (disciplinaId != null) {
 				condicoes.add(builder.equal(root.get("disciplinaId"), disciplinaId));
 			}
@@ -79,4 +93,17 @@ public interface TarefaRepository extends JpaRepository<Tarefa, Long>, JpaSpecif
 	}
 
 	Optional<Tarefa> findByIdAndCriador_Id(Long id, Long criadorId);
+
+	@Query("""
+			select tarefa from Tarefa tarefa
+			where tarefa.id = :tarefaId
+			  and (tarefa.criador.id = :usuarioId or exists (
+				  select participante.id from ParticipanteTarefa participante
+				  where participante.tarefa = tarefa and participante.usuario.id = :usuarioId
+			  ))
+			""")
+	Optional<Tarefa> findByIdAcessivelAoUsuario(
+			@Param("tarefaId") Long tarefaId,
+			@Param("usuarioId") Long usuarioId
+	);
 }
